@@ -1,0 +1,98 @@
+{
+  "concept": "sentiment",
+  "model": "synthetic",
+  "n_train": 144,
+  "n_test": 48,
+  "d_model": 64,
+  "n_layers": 12,
+  "seed": 0,
+  "baseline_test_acc": 0.5,
+  "chance_acc": 0.5,
+  "per_layer": [
+    {
+      "layer": 0,
+      "train_acc": 0.8472222222222222,
+      "test_acc": 0.4791666666666667,
+      "control_test_acc": 0.4375
+    },
+    {
+      "layer": 1,
+      "train_acc": 0.9375,
+      "test_acc": 0.75,
+      "control_test_acc": 0.5833333333333334
+    },
+    {
+      "layer": 2,
+      "train_acc": 1.0,
+      "test_acc": 0.8958333333333334,
+      "control_test_acc": 0.3333333333333333
+    },
+    {
+      "layer": 3,
+      "train_acc": 1.0,
+      "test_acc": 0.9791666666666666,
+      "control_test_acc": 0.3958333333333333
+    },
+    {
+      "layer": 4,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.5208333333333334
+    },
+    {
+      "layer": 5,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.4375
+    },
+    {
+      "layer": 6,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.5208333333333334
+    },
+    {
+      "layer": 7,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.4375
+    },
+    {
+      "layer": 8,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.4375
+    },
+    {
+      "layer": 9,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.5
+    },
+    {
+      "layer": 10,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.4791666666666667
+    },
+    {
+      "layer": 11,
+      "train_acc": 1.0,
+      "test_acc": 1.0,
+      "control_test_acc": 0.4375
+    }
+  ],
+  "best_layer": {
+    "layer": 4,
+    "train_acc": 1.0,
+    "test_acc": 1.0,
+    "control_test_acc": 0.5208333333333334
+  },
+  "best_selectivity_layer": {
+    "layer": 3,
+    "train_acc": 1.0,
+    "test_acc": 0.9791666666666666,
+    "control_test_acc": 0.3958333333333333,
+    "selectivity": 0.5833333333333333
+  }
+}
