@@ -136,3 +136,102 @@ class SentimentDataset(ConceptDataset):
             texts=texts, labels=labels_arr,
             train_idx=train_idx, test_idx=test_idx,
         )
+
+
+class NegationSentimentDataset(ConceptDataset):
+    """Negation-composed sentiment: a concept that cannot be read off one word.
+
+    `SentimentDataset` turned out to be *too easy*: polar adjectives are already
+    linearly separable in embedding space, so a probe scores at the ceiling from
+    layer 0, before the transformer computes anything. That tells us sentiment is
+    linearly present but nothing about *where* it is built.
+
+    This dataset closes that shortcut by making the label a **composition** of two
+    tokens rather than a property of either:
+
+        net_sentiment = adjective_polarity  XOR  negated
+
+    so "wonderful" (positive) and "not wonderful" (negative) share an adjective
+    but carry opposite labels, and "terrible" / "not terrible" likewise. Now:
+
+    * Both classes contain both polar adjective sets, so the adjective alone is
+      uninformative and a probe on the raw embedding has no lexical shortcut.
+    * A bag-of-tokens baseline sees the "not" token and the adjective token, but
+      the target is their XOR, which a linear unigram model cannot represent, so
+      that baseline sits at chance too.
+    * Only a representation that has actually *composed* negation with the
+      adjective encodes net sentiment linearly. That composition is built across
+      depth, so we expect the rise-then-plateau accuracy-by-layer curve: chance
+      at the embedding, rising to a ceiling by the mid stack.
+
+    Same probe protocol as `SentimentDataset` (per-layer logistic probe,
+    shuffled-label control, vocab-disjoint split), so only the concept changes.
+    This is the honest, informative companion to the lexical case.
+    """
+
+    name = "sentiment-negation-xor"
+
+    # Reuse the lexical adjective sets verbatim so the *only* change from the
+    # easy concept is the negation composition, not a different vocabulary.
+    POS_ADJ = SentimentDataset.POS_ADJ
+    NEG_ADJ = SentimentDataset.NEG_ADJ
+
+    # Affirmative and negated carrier sentences kept parallel, so the only
+    # systematic difference between an affirmative prompt and its negation is the
+    # negation itself (which flips the adjective's polarity).
+    AFFIRM_TEMPLATES = [
+        "The movie was absolutely {adj}.",
+        "Honestly, that meal felt {adj} to me.",
+        "What a {adj} experience that turned out to be.",
+        "Everyone agreed the show was {adj}.",
+    ]
+    NEGATED_TEMPLATES = [
+        "The movie was not {adj} at all.",
+        "Honestly, that meal did not feel {adj} to me.",
+        "That experience was not {adj} in the slightest.",
+        "Nobody agreed the show was {adj}.",
+    ]
+
+    def build(self) -> DatasetSplit:
+        rng = np.random.default_rng(self.seed)
+
+        n_hold = len(self.POS_ADJ) // 4  # 4 of 16 adjectives held out per class
+        pos_train, pos_test = self.POS_ADJ[:-n_hold], self.POS_ADJ[-n_hold:]
+        neg_train, neg_test = self.NEG_ADJ[:-n_hold], self.NEG_ADJ[-n_hold:]
+
+        texts: list[str] = []
+        labels: list[int] = []
+        split: list[str] = []
+
+        def emit(adjs: list[str], polarity_pos: bool, which: str) -> None:
+            """Emit affirmative and negated prompts for a set of adjectives.
+
+            `polarity_pos` is True for positive adjectives. Affirmative keeps the
+            polarity as the label; negation flips it (the XOR).
+            """
+            for adj in adjs:
+                for tmpl in self.AFFIRM_TEMPLATES:
+                    texts.append(tmpl.format(adj=adj))
+                    labels.append(1 if polarity_pos else 0)
+                    split.append(which)
+                for tmpl in self.NEGATED_TEMPLATES:
+                    texts.append(tmpl.format(adj=adj))
+                    labels.append(0 if polarity_pos else 1)
+                    split.append(which)
+
+        emit(pos_train, True, "train")
+        emit(neg_train, False, "train")
+        emit(pos_test, True, "test")
+        emit(neg_test, False, "test")
+
+        labels_arr = np.array(labels, dtype=np.int64)
+        split_arr = np.array(split)
+        train_idx = np.where(split_arr == "train")[0]
+        test_idx = np.where(split_arr == "test")[0]
+        rng.shuffle(train_idx)
+        rng.shuffle(test_idx)
+
+        return DatasetSplit(
+            texts=texts, labels=labels_arr,
+            train_idx=train_idx, test_idx=test_idx,
+        )
