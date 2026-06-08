@@ -52,3 +52,111 @@ class LayerCurvePlotter:
         fig.savefig(out, dpi=self.dpi)
         plt.close(fig)
         return out
+
+
+class DepthProfileContrastPlotter:
+    """Overlay two concepts' accuracy-by-layer curves to show the *shape* contrast.
+
+    This is the figure that carries the H001 depth-profile argument: a lexical
+    concept (separable at the embedding, flat at the ceiling) against a composed
+    concept (chance at the embedding, rising to a ceiling by the mid stack). Same
+    model, same probe, same 1.000 ceiling at the top, opposite meaning. The top
+    panel is held-out accuracy; the bottom panel is selectivity (real minus the
+    shuffled-label control), which confirms the rise is representation, not probe
+    capacity.
+
+    Pass the two `SweepReport`s in the order (lexical, composed); the labels and
+    annotations assume that order.
+    """
+
+    #: red for the lexical concept, blue for the composed concept (colourblind-safe).
+    C_LEXICAL = "#c44e52"
+    C_COMPOSED = "#4c72b0"
+
+    def __init__(self, dpi: int = 150, figsize=(8, 6.4)):
+        self.dpi = dpi
+        self.figsize = figsize
+
+    @staticmethod
+    def _curve(report: SweepReport):
+        layers = [r.layer for r in report.per_layer]
+        acc = [r.test_acc for r in report.per_layer]
+        sel = [r.selectivity for r in report.per_layer]
+        return layers, acc, sel
+
+    @staticmethod
+    def _validate_comparable(lexical: SweepReport, composed: SweepReport) -> None:
+        """Fail fast if the two reports are not on the same axis.
+
+        The contrast figure only means something if both sweeps were run over the
+        same residual-stream layers (and, in practice, the same model). If a caller
+        passes mismatched reports the overlay would silently mislead, so we refuse
+        rather than draw it.
+        """
+        l_layers = [r.layer for r in lexical.per_layer]
+        c_layers = [r.layer for r in composed.per_layer]
+        if l_layers != c_layers:
+            raise ValueError(
+                "Cannot contrast sweeps over different layers: "
+                f"lexical has {len(l_layers)} layers {l_layers[:3]}..., "
+                f"composed has {len(c_layers)} layers {c_layers[:3]}.... "
+                "Both sweeps must cover the same residual-stream points."
+            )
+        if lexical.model != composed.model:
+            raise ValueError(
+                "Refusing to contrast sweeps from different models "
+                f"({lexical.model!r} vs {composed.model!r}); the figure would "
+                "compare apples to oranges. Re-run both on the same model."
+            )
+
+    def plot(self, lexical: SweepReport, composed: SweepReport, out_path) -> Path:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        self._validate_comparable(lexical, composed)
+        L1, acc1, sel1 = self._curve(lexical)
+        L2, acc2, sel2 = self._curve(composed)
+
+        fig, (ax, axs) = plt.subplots(
+            2, 1, figsize=self.figsize, sharex=True,
+            gridspec_kw={"height_ratios": [3, 1.4], "hspace": 0.08},
+        )
+
+        # Top: held-out accuracy by layer.
+        ax.plot(L1, acc1, "-o", color=self.C_LEXICAL, ms=4, lw=2,
+                label="Lexical sentiment: pos vs neg")
+        ax.plot(L2, acc2, "-o", color=self.C_COMPOSED, ms=4, lw=2,
+                label="Composed sentiment: polarity XOR negation")
+        ax.axhline(composed.chance_acc, color="gray", ls="--", lw=1,
+                   label=f"Chance ({composed.chance_acc:.3f})")
+        ax.set_ylabel("Held-out probe accuracy")
+        ax.set_ylim(0.45, 1.03)
+        ax.set_title(f"Where a concept becomes linearly readable ({composed.model})")
+        ax.legend(loc="center right", fontsize=9, framealpha=0.95)
+        ax.grid(alpha=0.25)
+
+        # Annotate the two shapes (use each curve's own best layer for the arrow).
+        ax.annotate("flat at ceiling from the embedding\n(no computation needed)",
+                    xy=(lexical.best_layer.layer, lexical.best_layer.test_acc),
+                    xytext=(3.5, 0.74), fontsize=8.5, color=self.C_LEXICAL,
+                    arrowprops=dict(arrowstyle="->", color=self.C_LEXICAL, lw=1))
+        ax.annotate("chance at the embedding,\nrises then plateaus",
+                    xy=(composed.best_layer.layer, composed.best_layer.test_acc),
+                    xytext=(max(composed.best_layer.layer + 2, 10), 0.62),
+                    fontsize=8.5, color=self.C_COMPOSED,
+                    arrowprops=dict(arrowstyle="->", color=self.C_COMPOSED, lw=1))
+
+        # Bottom: selectivity (real minus shuffled-label control).
+        axs.plot(L1, sel1, "-o", color=self.C_LEXICAL, ms=3, lw=1.5)
+        axs.plot(L2, sel2, "-o", color=self.C_COMPOSED, ms=3, lw=1.5)
+        axs.axhline(0.0, color="gray", ls="--", lw=1)
+        axs.set_ylabel("Selectivity\n(real - shuffled)", fontsize=9)
+        axs.set_xlabel("Residual-stream layer (0 = input embedding)")
+        axs.grid(alpha=0.25)
+
+        out = Path(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out, dpi=self.dpi, bbox_inches="tight")
+        plt.close(fig)
+        return out

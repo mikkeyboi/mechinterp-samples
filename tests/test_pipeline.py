@@ -11,8 +11,10 @@ import numpy as np
 
 from mechinterp_samples import (
     SentimentDataset,
+    NegationSentimentDataset,
     LinearProbe,
     LayerProbeSweep,
+    DepthProfileContrastPlotter,
 )
 from mechinterp_samples.datasets import DatasetSplit
 
@@ -77,3 +79,89 @@ def test_report_roundtrips_to_json(tmp_path):
     d = json.loads(out.read_text())
     assert d["concept"] == "synthetic"
     assert "best_selectivity_layer" in d
+
+
+def test_negation_dataset_is_xor_and_balanced():
+    """The composed label must be adjective_polarity XOR negation, and balanced.
+
+    Each adjective contributes equal affirmative (keeps polarity) and negated
+    (flips polarity) prompts, so both classes contain both polar adjective sets:
+    that is what removes the lexical shortcut the easy concept had.
+    """
+    ds = NegationSentimentDataset(seed=0)
+    split = ds.build()
+    pos = int((split.labels == 1).sum())
+    neg = int((split.labels == 0).sum())
+    assert pos == neg  # perfectly balanced by construction
+
+    # An affirmative prompt with a positive adjective is net-positive; its negated
+    # twin with the same adjective is net-negative. Find one such pair by text.
+    texts = split.texts
+    labels = split.labels
+    affirm_pos = [i for i, t in enumerate(texts)
+                  if t == "The movie was absolutely wonderful."]
+    negate_pos = [i for i, t in enumerate(texts)
+                  if t == "The movie was not wonderful at all."]
+    assert affirm_pos and negate_pos
+    assert labels[affirm_pos[0]] == 1   # "wonderful" affirmative -> positive
+    assert labels[negate_pos[0]] == 0   # "not wonderful" -> negative (XOR flip)
+
+
+def test_negation_dataset_vocab_disjoint():
+    """Held-out adjectives must never appear in any training prompt."""
+    ds = NegationSentimentDataset(seed=0)
+    split = ds.build()
+    train_words = " ".join(split.texts_for("train")).lower()
+    for adj in ds.NEG_ADJ[-4:] + ds.POS_ADJ[-4:]:
+        assert adj not in train_words
+    assert split.n_train > 0 and split.n_test > 0
+
+
+def test_negation_bag_of_tokens_cannot_solve_xor():
+    """A linear unigram model cannot represent XOR, so it should sit near chance.
+
+    This is the load-bearing property: the composed concept is *not* a lexical
+    lookup, so the bag-of-tokens baseline (logistic regression on token counts)
+    must fail where a residual-stream probe on a composed representation succeeds.
+    """
+    ds = NegationSentimentDataset(seed=0)
+    split = ds.build()
+    y = split.labels
+    # Reach the same baseline the sweep reports, via its static helper.
+    baseline = LayerProbeSweep._bag_of_tokens_baseline(
+        split.texts_for("train"), y[split.train_idx],
+        split.texts_for("test"), y[split.test_idx], seed=0,
+    )
+    assert baseline < 0.75  # near chance; XOR is not linearly separable in tokens
+
+
+def test_contrast_plotter_writes_figure(tmp_path):
+    """The two-curve contrast figure renders from two reports without a model."""
+    acts, split = _synthetic_split()
+    rep_a = LayerProbeSweep(seed=0).run(acts, split, concept="A", model="synthetic")
+    rep_b = LayerProbeSweep(seed=0).run(acts, split, concept="B", model="synthetic")
+    out = tmp_path / "contrast.png"
+    path = DepthProfileContrastPlotter().plot(rep_a, rep_b, out)
+    assert path.exists() and path.stat().st_size > 0
+
+
+def test_contrast_plotter_rejects_mismatched_models(tmp_path):
+    """Refuse to overlay sweeps from different models (silently misleading)."""
+    import pytest
+    acts, split = _synthetic_split()
+    rep_a = LayerProbeSweep(seed=0).run(acts, split, concept="A", model="model-x")
+    rep_b = LayerProbeSweep(seed=0).run(acts, split, concept="B", model="model-y")
+    with pytest.raises(ValueError, match="different models"):
+        DepthProfileContrastPlotter().plot(rep_a, rep_b, tmp_path / "x.png")
+
+
+def test_contrast_plotter_rejects_mismatched_layers(tmp_path):
+    """Refuse to overlay sweeps run over different residual-stream layers."""
+    import pytest
+    acts, split = _synthetic_split()
+    rep_full = LayerProbeSweep(seed=0).run(acts, split, concept="A", model="m")
+    # A sweep over only layer 1 (one residual point) is not comparable to a
+    # two-layer sweep, even though the model string matches.
+    rep_part = LayerProbeSweep(seed=0).run({1: acts[1]}, split, concept="B", model="m")
+    with pytest.raises(ValueError, match="different layers"):
+        DepthProfileContrastPlotter().plot(rep_full, rep_part, tmp_path / "y.png")

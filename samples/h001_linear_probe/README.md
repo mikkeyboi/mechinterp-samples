@@ -60,19 +60,60 @@ That is a cautionary result, and it is the point of including it:
 
 The fix (a follow-up demo) is to make the concept one that **cannot** be read off
 the embedding, e.g. a relation that depends on composing several tokens, so depth
-has to do real work. Fuller research notes are available on request.
+has to do real work. That follow-up ships here as `contrast_demo.py`.
+
+## The follow-up: a concept the embedding cannot give you
+
+`contrast_demo.py` runs the **same** probe pipeline on **two** concepts and
+overlays their curves, because the teaching point is the *shape* contrast:
+
+- **Lexical sentiment** (positive vs negative adjectives): separable at the
+  ceiling from layer 0. The probe reads the dictionary.
+- **Negation-composed sentiment** (`net = adjective_polarity XOR negation`):
+  "wonderful" and "not wonderful" share an adjective but carry opposite labels, so
+  the adjective alone is uninformative. A bag-of-tokens baseline sits at chance for
+  two independent reasons: it cannot represent XOR at all, and the vocab-disjoint
+  split (vectoriser fit on train only) leaves held-out adjectives out of its
+  feature space entirely. The model has to **compose** the two, and the probe curve
+  shows it: chance at the embedding, rising to a ceiling across the early-to-mid
+  stack.
+
+```bash
+python samples/h001_linear_probe/contrast_demo.py          # synthetic, instant
+python samples/h001_linear_probe/contrast_demo.py --real   # real Gemma 3 1B
+```
+
+![depth-profile contrast](figures/depth_profile_contrast.png)
+
+On a real Gemma 3 1B run (`--real`, seed 0, mean-pooled residual), the lexical
+curve is flat at 1.000 from layer 0, while the composed curve is **0.500 (chance)
+at the embedding** and climbs to **1.000 by layer 8**, with the bag-of-tokens
+baseline at 0.500 for both. Same model, same probe, same ceiling at the top,
+opposite meaning. The bottom panel (selectivity, real minus shuffled-label
+control) confirms the composed rise is representation, not probe capacity.
+
+**What it does and does not show (read this).** A rising curve locates where the
+composed concept becomes *linearly readable*, which is a real and useful claim. It
+is **not** a localisation of *which heads or MLPs build it* (that is causal
+activation patching, not a probe), and "readable by layer 8" is the ceiling of
+this particular mean-pool readout, not a claim that the information lives only
+there. Accuracy can also plateau while the probe *direction* keeps rotating across
+depth, so the plateau is not evidence the representation has "settled." Fuller
+research notes are available on request.
 
 ## Files
 
 ```
 h001_linear_probe/
-  demo.py        runnable end to end (synthetic by default, --real for Gemma)
-  notebook.ipynb narrated walkthrough
-  figures/       figures + report JSON the demo writes
-  README.md      this file
+  demo.py          single-concept sweep (synthetic by default, --real for Gemma)
+  contrast_demo.py two-concept depth-profile contrast (lexical vs composed XOR)
+  notebook.ipynb   narrated walkthrough
+  figures/         figures + report JSON the demos write
+  README.md        this file
 ```
 
-The reusable machinery (`SentimentDataset`, `ActivationCapturer`, `LinearProbe`,
-`LayerProbeSweep`, `LayerCurvePlotter`) lives in the shared package
+The reusable machinery (`SentimentDataset`, `NegationSentimentDataset`,
+`ActivationCapturer`, `LinearProbe`, `LayerProbeSweep`, `LayerCurvePlotter`,
+`DepthProfileContrastPlotter`) lives in the shared package
 `src/mechinterp_samples/` so later demos reuse it. See the top-level README for
 the design.

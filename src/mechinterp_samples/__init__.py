@@ -12,14 +12,20 @@ setup leaks the concept at the embedding layer, is itself the teaching point.
 """
 from __future__ import annotations
 
-from .datasets import ConceptDataset, SentimentDataset, DatasetSplit
+from .datasets import (
+    ConceptDataset,
+    SentimentDataset,
+    NegationSentimentDataset,
+    DatasetSplit,
+)
 from .capture import ActivationCapturer, MeanPooler, LastTokenPooler
 from .probes import LinearProbe, LayerProbeSweep, LayerResult, SweepReport
-from .plotting import LayerCurvePlotter
+from .plotting import LayerCurvePlotter, DepthProfileContrastPlotter
 
 __all__ = [
     "ConceptDataset",
     "SentimentDataset",
+    "NegationSentimentDataset",
     "DatasetSplit",
     "ActivationCapturer",
     "MeanPooler",
@@ -29,6 +35,7 @@ __all__ = [
     "LayerResult",
     "SweepReport",
     "LayerCurvePlotter",
+    "DepthProfileContrastPlotter",
 ]
 
 __version__ = "0.1.0"
