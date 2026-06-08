@@ -143,3 +143,25 @@ def test_contrast_plotter_writes_figure(tmp_path):
     out = tmp_path / "contrast.png"
     path = DepthProfileContrastPlotter().plot(rep_a, rep_b, out)
     assert path.exists() and path.stat().st_size > 0
+
+
+def test_contrast_plotter_rejects_mismatched_models(tmp_path):
+    """Refuse to overlay sweeps from different models (silently misleading)."""
+    import pytest
+    acts, split = _synthetic_split()
+    rep_a = LayerProbeSweep(seed=0).run(acts, split, concept="A", model="model-x")
+    rep_b = LayerProbeSweep(seed=0).run(acts, split, concept="B", model="model-y")
+    with pytest.raises(ValueError, match="different models"):
+        DepthProfileContrastPlotter().plot(rep_a, rep_b, tmp_path / "x.png")
+
+
+def test_contrast_plotter_rejects_mismatched_layers(tmp_path):
+    """Refuse to overlay sweeps run over different residual-stream layers."""
+    import pytest
+    acts, split = _synthetic_split()
+    rep_full = LayerProbeSweep(seed=0).run(acts, split, concept="A", model="m")
+    # A sweep over only layer 1 (one residual point) is not comparable to a
+    # two-layer sweep, even though the model string matches.
+    rep_part = LayerProbeSweep(seed=0).run({1: acts[1]}, split, concept="B", model="m")
+    with pytest.raises(ValueError, match="different layers"):
+        DepthProfileContrastPlotter().plot(rep_full, rep_part, tmp_path / "y.png")

@@ -71,10 +71,12 @@ overlays their curves, because the teaching point is the *shape* contrast:
   ceiling from layer 0. The probe reads the dictionary.
 - **Negation-composed sentiment** (`net = adjective_polarity XOR negation`):
   "wonderful" and "not wonderful" share an adjective but carry opposite labels, so
-  the adjective alone is uninformative and a bag-of-tokens baseline (which cannot
-  represent XOR) sits at chance. The model has to **compose** the two, and the
-  probe curve shows it: chance at the embedding, rising to a ceiling across the
-  early-to-mid stack.
+  the adjective alone is uninformative. A bag-of-tokens baseline sits at chance for
+  two independent reasons: it cannot represent XOR at all, and the vocab-disjoint
+  split (vectoriser fit on train only) leaves held-out adjectives out of its
+  feature space entirely. The model has to **compose** the two, and the probe curve
+  shows it: chance at the embedding, rising to a ceiling across the early-to-mid
+  stack.
 
 ```bash
 python samples/h001_linear_probe/contrast_demo.py          # synthetic, instant

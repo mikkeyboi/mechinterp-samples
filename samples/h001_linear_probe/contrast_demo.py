@@ -26,17 +26,22 @@ Gemma 3 1B curves; that is the run the blog figure is made from.
 from __future__ import annotations
 
 import argparse
+import sys
 import warnings
 from pathlib import Path
 
 import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 
-# The per-layer logistic probes run on unscaled ~1000-dim residual activations, so
-# lbfgs sometimes hits max_iter without fully converging. Held-out accuracy is
-# unaffected (it matches the private reference run), so we silence the cosmetic
-# warning here at the demo boundary rather than in the library.
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
+# Make the sample runnable from a fresh clone without `pip install` first: add the
+# repo's src/ to the path if the package is not already importable. (Installing the
+# package, per the README, also works and takes precedence.)
+try:
+    import mechinterp_samples  # noqa: F401
+except ModuleNotFoundError:
+    _SRC = Path(__file__).resolve().parents[2] / "src"
+    if _SRC.is_dir():
+        sys.path.insert(0, str(_SRC))
 
 from mechinterp_samples import (
     SentimentDataset,
@@ -120,6 +125,13 @@ def summarise(tag: str, report: SweepReport) -> None:
 
 
 def main():
+    # The per-layer logistic probes run on unscaled ~1000-dim residual
+    # activations, so lbfgs sometimes hits max_iter without fully converging.
+    # Held-out accuracy is unaffected (it matches the reference run), so we
+    # silence the cosmetic warning, but only here when run as a script, not at
+    # import time (which would mutate global warning state for any importer).
+    warnings.filterwarnings("ignore", category=ConvergenceWarning)
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--real", action="store_true",
                     help="capture real Gemma 3 1B activations (GPU + gated access)")

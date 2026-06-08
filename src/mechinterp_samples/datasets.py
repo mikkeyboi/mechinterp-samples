@@ -156,9 +156,12 @@ class NegationSentimentDataset(ConceptDataset):
 
     * Both classes contain both polar adjective sets, so the adjective alone is
       uninformative and a probe on the raw embedding has no lexical shortcut.
-    * A bag-of-tokens baseline sees the "not" token and the adjective token, but
-      the target is their XOR, which a linear unigram model cannot represent, so
-      that baseline sits at chance too.
+    * A bag-of-tokens baseline cannot solve the task either. The label is the XOR
+      of polarity and negation, which a linear unigram model cannot represent even
+      in principle; and because the split is vocab-disjoint with the vectoriser fit
+      on train only, held-out adjectives are not even in its feature space. Either
+      way the baseline sits at chance, so a probe that beats it is using more than
+      token counts.
     * Only a representation that has actually *composed* negation with the
       adjective encodes net sentiment linearly. That composition is built across
       depth, so we expect the rise-then-plateau accuracy-by-layer curve: chance
@@ -176,20 +179,25 @@ class NegationSentimentDataset(ConceptDataset):
     POS_ADJ = SentimentDataset.POS_ADJ
     NEG_ADJ = SentimentDataset.NEG_ADJ
 
-    # Affirmative and negated carrier sentences kept parallel, so the only
-    # systematic difference between an affirmative prompt and its negation is the
-    # negation itself (which flips the adjective's polarity).
+    # Affirmative / negated carrier sentences. We keep each pair as close to a
+    # minimal edit as natural English allows, so the dominant systematic
+    # difference between an affirmative prompt and its negation is the negation
+    # marker ("not"/"never") rather than unrelated wording. They are not a perfect
+    # minimal pair (English negation often shifts a function word or two), so we do
+    # not rely on surface-token parallelism for the result; the load-bearing
+    # control is the vocab-disjoint split plus the bag-of-tokens baseline, both of
+    # which hold regardless of template wording.
     AFFIRM_TEMPLATES = [
         "The movie was absolutely {adj}.",
         "Honestly, that meal felt {adj} to me.",
-        "What a {adj} experience that turned out to be.",
+        "That experience was truly {adj} in every way.",
         "Everyone agreed the show was {adj}.",
     ]
     NEGATED_TEMPLATES = [
         "The movie was not {adj} at all.",
         "Honestly, that meal did not feel {adj} to me.",
-        "That experience was not {adj} in the slightest.",
-        "Nobody agreed the show was {adj}.",
+        "That experience was not {adj} in any way.",
+        "Everyone agreed the show was never {adj}.",
     ]
 
     def build(self) -> DatasetSplit:

@@ -15,9 +15,20 @@ embedding layer" result the real run produces.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
+
+# Make the sample runnable from a fresh clone without `pip install` first: add the
+# repo's src/ to the path if the package is not already importable. (Installing the
+# package, per the README, also works and takes precedence.)
+try:
+    import mechinterp_samples  # noqa: F401
+except ModuleNotFoundError:
+    _SRC = Path(__file__).resolve().parents[2] / "src"
+    if _SRC.is_dir():
+        sys.path.insert(0, str(_SRC))
 
 from mechinterp_samples import (
     SentimentDataset,

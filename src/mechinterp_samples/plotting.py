@@ -84,11 +84,37 @@ class DepthProfileContrastPlotter:
         sel = [r.selectivity for r in report.per_layer]
         return layers, acc, sel
 
+    @staticmethod
+    def _validate_comparable(lexical: SweepReport, composed: SweepReport) -> None:
+        """Fail fast if the two reports are not on the same axis.
+
+        The contrast figure only means something if both sweeps were run over the
+        same residual-stream layers (and, in practice, the same model). If a caller
+        passes mismatched reports the overlay would silently mislead, so we refuse
+        rather than draw it.
+        """
+        l_layers = [r.layer for r in lexical.per_layer]
+        c_layers = [r.layer for r in composed.per_layer]
+        if l_layers != c_layers:
+            raise ValueError(
+                "Cannot contrast sweeps over different layers: "
+                f"lexical has {len(l_layers)} layers {l_layers[:3]}..., "
+                f"composed has {len(c_layers)} layers {c_layers[:3]}.... "
+                "Both sweeps must cover the same residual-stream points."
+            )
+        if lexical.model != composed.model:
+            raise ValueError(
+                "Refusing to contrast sweeps from different models "
+                f"({lexical.model!r} vs {composed.model!r}); the figure would "
+                "compare apples to oranges. Re-run both on the same model."
+            )
+
     def plot(self, lexical: SweepReport, composed: SweepReport, out_path) -> Path:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
+        self._validate_comparable(lexical, composed)
         L1, acc1, sel1 = self._curve(lexical)
         L2, acc2, sel2 = self._curve(composed)
 

@@ -25,7 +25,7 @@ capture = [
     "accelerate>=0.30",
 ]
 notebook = ["jupyter>=1.0", "nbformat>=5.9"]
-dev = ["pytest>=7.4"]
+dev = ["pytest>=7.4", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,3 +33,21 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+# Match the package's supported floor.
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# A pragmatic set: pyflakes (F) catches the real bugs (unused/undefined names,
+# the kind of thing a reviewer flagged), pycodestyle errors (E) catch syntax-ish
+# issues. We are not enforcing import-ordering or docstring style here.
+select = ["F", "E"]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebooks are deliberately non-linear: imports mid-cell (E402), multiple
+# imports/statements per line (E401/E702) are idiomatic exploration, not bugs.
+"*.ipynb" = ["E401", "E402", "E702"]
+# dev-and-demo path bootstrap: scripts may need a small amount of latitude.
+"samples/**" = ["E402"]
