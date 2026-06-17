@@ -20,7 +20,22 @@ from .datasets import (
 )
 from .capture import ActivationCapturer, MeanPooler, LastTokenPooler
 from .probes import LinearProbe, LayerProbeSweep, LayerResult, SweepReport
-from .plotting import LayerCurvePlotter, DepthProfileContrastPlotter
+from .plotting import LayerCurvePlotter, DepthProfileContrastPlotter, RefusalReproductionPlotter
+from .refusal import (
+    RefusalDirection,
+    Intervention,
+    DirectionalAblation,
+    ActivationAddition,
+    RefusalClassifier,
+    PlantedRefusalModel,
+    make_planted_dataset,
+    SingleDirectionExperiment,
+    ReproductionReport,
+    ArmRates,
+    unit,
+    cosine,
+    norm_matched_random,
+)
 
 __all__ = [
     "ConceptDataset",
@@ -36,6 +51,21 @@ __all__ = [
     "SweepReport",
     "LayerCurvePlotter",
     "DepthProfileContrastPlotter",
+    "RefusalReproductionPlotter",
+    # refusal-direction (H005) toolkit
+    "RefusalDirection",
+    "Intervention",
+    "DirectionalAblation",
+    "ActivationAddition",
+    "RefusalClassifier",
+    "PlantedRefusalModel",
+    "make_planted_dataset",
+    "SingleDirectionExperiment",
+    "ReproductionReport",
+    "ArmRates",
+    "unit",
+    "cosine",
+    "norm_matched_random",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

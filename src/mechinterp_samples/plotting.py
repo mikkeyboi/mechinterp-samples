@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .probes import SweepReport
+from .refusal import ReproductionReport
 
 
 class LayerCurvePlotter:
@@ -158,5 +159,79 @@ class DepthProfileContrastPlotter:
         out = Path(out_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out, dpi=self.dpi, bbox_inches="tight")
+        plt.close(fig)
+        return out
+
+
+class RefusalReproductionPlotter:
+    """Two-panel bar figure for the single-direction refusal reproduction.
+
+    Left panel (suppression, on harmful prompts): baseline refusal, refusal after
+    ablating the real direction, and refusal after ablating a norm-matched random
+    control. Right panel (induction, on harmless prompts): baseline, after adding
+    the real direction, after adding the control. The story the figure has to tell
+    is the gap between the real bar and the control bar: a single-direction result
+    is one where erasing/adding the real direction moves refusal hard while the
+    equal-norm random direction does not.
+    """
+
+    C_BASELINE = "#777777"
+    C_REAL_SUPPRESS = "#1f77b4"
+    C_CTRL_SUPPRESS = "#aec7e8"
+    C_REAL_INDUCE = "#d62728"
+    C_CTRL_INDUCE = "#ff9896"
+
+    def __init__(self, dpi: int = 140, figsize=(11, 4.5)):
+        self.dpi = dpi
+        self.figsize = figsize
+
+    def plot(self, report: ReproductionReport, out_path) -> Path:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        real, control = report.real, report.control
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.figsize)
+
+        # Left: suppression on the harmful set.
+        labels = ["baseline", "ablation\n(real dir)", "ablation\n(random ctrl)"]
+        vals = [
+            real.baseline_harmful_refusal,
+            real.ablation_harmful_refusal,
+            control.ablation_harmful_refusal,
+        ]
+        ax1.bar(labels, vals, color=[self.C_BASELINE, self.C_REAL_SUPPRESS, self.C_CTRL_SUPPRESS])
+        ax1.set_ylim(0, 1.05)
+        ax1.set_ylabel("refusal rate (harmful prompts)")
+        ax1.set_title("Suppression: erase the refusal direction")
+        ax1.axhline(real.baseline_harmful_refusal, ls="--", c=self.C_BASELINE, lw=1)
+        for i, val in enumerate(vals):
+            ax1.text(i, val + 0.02, f"{val:.2f}", ha="center", va="bottom")
+
+        # Right: induction on the harmless set.
+        labels2 = ["baseline", "addition\n(real dir)", "addition\n(random ctrl)"]
+        vals2 = [
+            real.baseline_harmless_refusal,
+            real.addition_harmless_refusal,
+            control.addition_harmless_refusal,
+        ]
+        ax2.bar(labels2, vals2, color=[self.C_BASELINE, self.C_REAL_INDUCE, self.C_CTRL_INDUCE])
+        ax2.set_ylim(0, 1.05)
+        ax2.set_ylabel("refusal rate (harmless prompts)")
+        ax2.set_title("Induction: add the refusal direction")
+        ax2.axhline(real.baseline_harmless_refusal, ls="--", c=self.C_BASELINE, lw=1)
+        for i, val in enumerate(vals2):
+            ax2.text(i, val + 0.02, f"{val:.2f}", ha="center", va="bottom")
+
+        fig.suptitle(
+            f"Refusal as a single direction ({report.model}): {report.verdict}",
+            fontsize=12,
+        )
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+        out = Path(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out, dpi=self.dpi)
         plt.close(fig)
         return out
