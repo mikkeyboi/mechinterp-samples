@@ -126,6 +126,24 @@ class ActivationCapturer:
             for layer, chunks in pooled_by_layer.items()
         }
 
+    @property
+    def model(self):
+        """Loaded model, initializing the capture runtime on first access."""
+        self._ensure_loaded()
+        return self._model
+
+    @property
+    def tokenizer(self):
+        """Loaded tokenizer, initializing the capture runtime on first access."""
+        self._ensure_loaded()
+        return self._tok
+
+    @property
+    def device(self):
+        """Torch device selected by the capture runtime."""
+        self._ensure_loaded()
+        return self._device
+
     # --- cache helpers: capture is the expensive step, so persist it ---------
 
     @staticmethod

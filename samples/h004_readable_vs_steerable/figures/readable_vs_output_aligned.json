@@ -1,0 +1,46 @@
+{
+  "model": "synthetic planted profile",
+  "concept": "composed polarity",
+  "chance_auc": 0.5,
+  "layers": [
+    {
+      "layer": 0,
+      "probe_accuracy": 0.575,
+      "logit_lens_auc": 0.2622358175750834,
+      "regime": "not-readable"
+    },
+    {
+      "layer": 1,
+      "probe_accuracy": 0.9333333333333333,
+      "logit_lens_auc": 0.09510567296996662,
+      "regime": "readable-but-output-anti-aligned"
+    },
+    {
+      "layer": 2,
+      "probe_accuracy": 1.0,
+      "logit_lens_auc": 0.0,
+      "regime": "readable-but-output-anti-aligned"
+    },
+    {
+      "layer": 3,
+      "probe_accuracy": 1.0,
+      "logit_lens_auc": 0.16546162402669634,
+      "regime": "readable-but-output-anti-aligned"
+    },
+    {
+      "layer": 4,
+      "probe_accuracy": 1.0,
+      "logit_lens_auc": 0.9997219132369299,
+      "regime": "readable-and-output-aligned"
+    },
+    {
+      "layer": 5,
+      "probe_accuracy": 1.0,
+      "logit_lens_auc": 1.0,
+      "regime": "readable-and-output-aligned"
+    }
+  ],
+  "readable_onset_layer": 2,
+  "selected_steering_layer": 5,
+  "selected_site_is_descriptive": true
+}

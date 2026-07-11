@@ -11,8 +11,54 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .accessibility import AccessibilityReport
 from .probes import SweepReport
 from .refusal import ReproductionReport
+
+
+class AccessibilityPlotter:
+    """Overlay held-out readability and output-basis accessibility by depth."""
+
+    def __init__(self, dpi: int = 150, figsize=(8, 5)):
+        self.dpi = dpi
+        self.figsize = figsize
+
+    def plot(self, report: AccessibilityReport, out_path) -> Path:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        layers = [row.layer for row in report.layers]
+        probe = [row.probe_accuracy for row in report.layers]
+        lens = [row.logit_lens_auc for row in report.layers]
+        fig, ax = plt.subplots(figsize=self.figsize)
+        ax.plot(layers, probe, "o-", color="#4c72b0", lw=2, label="linear readability")
+        ax.plot(layers, lens, "s-", color="#dd8452", lw=2, label="output accessibility")
+        ax.axhline(report.chance_auc, color="gray", ls="--", lw=1, label="chance")
+        ax.axvline(
+            report.readable_onset_layer,
+            color="#4c72b0",
+            ls=":",
+            label=f"readable onset L{report.readable_onset_layer}",
+        )
+        if report.selected_steering_layer is not None:
+            ax.axvline(
+                report.selected_steering_layer,
+                color="#8172b3",
+                ls=":",
+                label=f"selected steering site L{report.selected_steering_layer}",
+            )
+        ax.set(xlabel="residual-stream layer", ylabel="held-out score", ylim=(0, 1.03))
+        ax.set_title(f"Readable is not necessarily output-aligned ({report.model})")
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        out = Path(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out, dpi=self.dpi)
+        plt.close(fig)
+        return out
 
 
 class LayerCurvePlotter:
