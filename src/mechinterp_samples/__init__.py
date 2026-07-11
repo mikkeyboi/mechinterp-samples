@@ -19,8 +19,19 @@ from .datasets import (
     DatasetSplit,
 )
 from .capture import ActivationCapturer, MeanPooler, LastTokenPooler
+from .accessibility import (
+    AccessibilityReport,
+    LayerAccessibility,
+    OutputAccessibilityAnalyzer,
+    rank_auc,
+)
 from .probes import LinearProbe, LayerProbeSweep, LayerResult, SweepReport
-from .plotting import LayerCurvePlotter, DepthProfileContrastPlotter, RefusalReproductionPlotter
+from .plotting import (
+    AccessibilityPlotter,
+    LayerCurvePlotter,
+    DepthProfileContrastPlotter,
+    RefusalReproductionPlotter,
+)
 from .refusal import (
     RefusalDirection,
     Intervention,
@@ -45,10 +56,15 @@ __all__ = [
     "ActivationCapturer",
     "MeanPooler",
     "LastTokenPooler",
+    "AccessibilityReport",
+    "LayerAccessibility",
+    "OutputAccessibilityAnalyzer",
+    "rank_auc",
     "LinearProbe",
     "LayerProbeSweep",
     "LayerResult",
     "SweepReport",
+    "AccessibilityPlotter",
     "LayerCurvePlotter",
     "DepthProfileContrastPlotter",
     "RefusalReproductionPlotter",
