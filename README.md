@@ -1,8 +1,8 @@
 # mechinterp-samples
 
 Runnable, readable **mechanistic-interpretability** demonstrations. Each sample is
-a small, self-contained study you can clone and run: a notebook plus a shared,
-class-based library. The goal is to *teach the method*, not just show a result.
+a small, self-contained study you can clone and run: a `demo.py` (sometimes
+with a narrated notebook) plus a shared, class-based library. The goal is to *teach the method*, not just show a result.
 
 These are the public, showcase-quality slices of an ongoing learning project. Not
 every research artifact is here; the ones that are, prioritise clarity. Fuller
@@ -87,7 +87,7 @@ accuracy-by-layer curve reveal whether a concept is *computed deep* or merely
 ```
 mechinterp-samples/
   src/mechinterp_samples/   reusable, class-based library
-  samples/<hNNN>_<slug>/    one self-contained demo each (notebook + README + figures)
+  samples/<hNNN>_<slug>/    one self-contained demo each (demo.py + README + figures, optional notebook)
   tests/                    model-free pytest suite
   pyproject.toml            core deps; [capture] extra for real model runs
 ```
@@ -96,7 +96,10 @@ The `samples/hNNN_<slug>/` naming **mirrors** the private project's
 hypothesis-oriented structure, so a given hypothesis maps to a given public demo
 without guesswork.
 
-## Contributing / conventions
+## Conventions
+
+This is a personal showcase and is not open to outside contributions. The
+conventions below are the ones the samples follow.
 
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, ...); semantic-release
   derives versions from messages.
