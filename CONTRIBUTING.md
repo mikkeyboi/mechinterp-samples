@@ -24,12 +24,7 @@ exhaustive.
 2. Mirror the private project's hypothesis id in the directory name (`hNNN_<slug>`).
 3. Add or extend a test in `tests/` that exercises the new logic **without** a
    model (synthesise activations with known structure, as the existing tests do).
-4. Write the README from `samples/README_TEMPLATE.md`: a `# HNNN: <question>?`
-   title, then `## TL;DR`, `## Run it`, `## How to read the figure`,
-   `## Takeaway` and `## Limits`, in that order. Extra sections are fine.
-   `python scripts/validate_samples.py` checks this.
-5. Add the sample to the table in the top-level README.
-6. `pytest` must pass on CPU in seconds.
+4. `pytest` must pass on CPU in seconds.
 
 ## What does *not* belong here
 
