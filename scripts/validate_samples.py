@@ -6,7 +6,10 @@ per-sample CI list, we *discover* samples and assert the invariants every sample
 must satisfy. A new sample added tomorrow is validated automatically.
 
 Invariants enforced (per sample directory under samples/):
-  1. It has a README.md (a stranger needs to know what it is and how to run it).
+  1. It has a README.md (a stranger needs to know what it is and how to run it),
+     and that README follows samples/README_TEMPLATE.md: a "# HNNN: <question>?"
+     title matching the directory id, the required "## " sections in order, and
+     at least one figure under figures/ that exists on disk.
   2. It exposes at least one runnable demo: a *.py with an `if __name__ == "__main__"`.
   3. Every demo runs **standalone from a fresh clone**: no install, no PYTHONPATH.
      We invoke it in a subprocess with an empty PYTHONPATH and a synthetic/offline
@@ -23,6 +26,7 @@ Exit code is non-zero if any invariant fails, with a precise report.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,12 +35,61 @@ REPO = Path(__file__).resolve().parents[1]
 SAMPLES = REPO / "samples"
 # Per-demo wall-clock budget. The probe sweeps fit many logistic models on CPU.
 RUN_TIMEOUT = int(os.environ.get("SAMPLE_RUN_TIMEOUT", "300"))
+# The shared README shape (see samples/README_TEMPLATE.md). Extra sections may sit
+# anywhere after the title; these must all appear, spelled exactly, in this order.
+REQUIRED_SECTIONS = [
+    "TL;DR",
+    "Run it",
+    "How to read the figure",
+    "Takeaway",
+    "Limits",
+]
+TITLE_RX = re.compile(r"^# (H\d{3}): .+\?\s*$")
+FIGURE_RX = re.compile(r"!\[[^\]]*\]\((figures/[^)\s]+)\)")
 
 
 def find_samples() -> list[Path]:
     if not SAMPLES.is_dir():
         return []
     return sorted(p for p in SAMPLES.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
+
+
+def check_readme(sample: Path) -> list[str]:
+    """Return template violations for a sample's README (empty list means ok)."""
+    readme = sample / "README.md"
+    if not readme.is_file():
+        return ["missing README.md"]
+    text = readme.read_text(encoding="utf-8", errors="replace")
+    # Ignore fenced code and HTML comments so a "# comment" in a bash block or a
+    # heading inside a note is not mistaken for structure.
+    body = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+    lines = body.splitlines()
+
+    problems: list[str] = []
+    title = next((ln for ln in lines if ln.startswith("# ")), None)
+    m = TITLE_RX.match(title or "")
+    if not m:
+        problems.append(f"title must read '# HNNN: <question>?', got {title!r}")
+    elif not sample.name.lower().startswith(m.group(1).lower() + "_"):
+        problems.append(f"title id {m.group(1)} does not match directory {sample.name}")
+
+    sections = [ln[3:].strip() for ln in lines if ln.startswith("## ")]
+    missing = [s for s in REQUIRED_SECTIONS if s not in sections]
+    if missing:
+        problems.append("missing section(s): " + ", ".join(f"'## {s}'" for s in missing))
+    else:
+        order = [sections.index(s) for s in REQUIRED_SECTIONS]
+        if order != sorted(order):
+            problems.append("sections out of order; expected " + " -> ".join(REQUIRED_SECTIONS))
+
+    figures = FIGURE_RX.findall(body)
+    if not figures:
+        problems.append("no figure: embed at least one ![...](figures/...) image")
+    for fig in figures:
+        if not (sample / fig).is_file():
+            problems.append(f"figure not found: {fig}")
+    return problems
 
 
 def demos_in(sample: Path) -> list[Path]:
@@ -88,11 +141,13 @@ def main() -> int:
         rel = s.relative_to(REPO)
         print(f"== {rel} ==")
 
-        if not (s / "README.md").is_file():
-            failures.append(f"{rel}: missing README.md")
-            print("  [FAIL] no README.md")
+        problems = check_readme(s)
+        if problems:
+            for prob in problems:
+                failures.append(f"{rel}/README.md: {prob}")
+                print(f"  [FAIL] README.md: {prob}")
         else:
-            print("  [ok] README.md")
+            print("  [ok] README.md follows the template")
 
         demos = demos_in(s)
         if not demos:

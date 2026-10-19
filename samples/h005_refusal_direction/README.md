@@ -53,14 +53,14 @@ refusal phrase):
 A single-direction result is one where the **real** bars move and the **random
 control** bars do not, in both panels.
 
-## What a real run shows
+## Takeaway
 
 On a real safety-tuned chat model that refuses at baseline, this reproduces: one
 difference-of-means direction both suppresses refusal under ablation and induces
 it under addition, each well beyond the norm-matched random control. The verdict
 the pre-registered rule returns in that case is `SINGLE-DIRECTION-REPRODUCES`.
 
-Two honest caveats this sample builds in:
+## Limits
 
 - **The model has to refuse in the first place.** The pre-registered rule returns
   `NO-BASELINE-REFUSAL` when a model refuses too few harmful prompts at baseline
@@ -75,6 +75,9 @@ Two honest caveats this sample builds in:
   one-dimensional control knob (Joad et al. 2026), and that ablating *several*
   directions suppresses more thoroughly than one (Piras et al. 2026). So "one
   direction works" is a floor, not a ceiling.
+- **The `--real` path discovers, it does not generate.** It reports where
+  harmful and harmless instructions separate; the generate-under-ablation
+  reproduction is out of scope here (see below).
 
 ## Why this is a safety result, not a recipe
 
