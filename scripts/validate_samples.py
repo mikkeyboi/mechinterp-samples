@@ -51,6 +51,8 @@ FIGURE_RX = re.compile(r"(?:^|[^\\])(?:\\\\)*!\[[^\]]*\]\((figures/[^)\s]+)\)", 
 # CommonMark fences: up to three spaces of indent, then three or more backticks or
 # tildes. A fence closes on a line of the same character, at least as long.
 FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# An HTML comment block: a line opening with "<!--" after up to three spaces.
+COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
 # CommonMark code spans: a backtick run closed by the next run of the same length,
 # within one paragraph (a span never crosses a blank line).
 CODE_SPAN_RX = re.compile(r"(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)\1(?!`)", re.DOTALL)
@@ -62,17 +64,32 @@ def find_samples() -> list[Path]:
     return sorted(p for p in SAMPLES.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
 
 
-def strip_fenced_code(text: str) -> str:
-    """Blank every line inside a fenced code block, fences included.
+def strip_hidden_blocks(text: str) -> str:
+    """Blank every line of a fenced code block or an HTML comment block.
 
-    Tracks the opening fence's character and length so a "~~~" block, or a
-    four-backtick block holding a triple-backtick line, is removed whole. An
-    unclosed fence runs to the end of the document, as it renders.
+    One pass handles both, so a fence marker inside a comment stays hidden and a
+    comment marker inside a code block stays literal. A fence closes on the same
+    character, at least as long, so a "~~~" block, or a four-backtick block
+    holding a triple-backtick line, is removed whole. A comment block starts on a
+    line opening with "<!--" and ends on the line holding "-->". Unclosed blocks
+    run to the end of the document, as they render.
     """
     out: list[str] = []
     fence: tuple[str, int] | None = None
+    in_comment = False
     for line in text.splitlines():
-        if fence is None:
+        if in_comment:
+            in_comment = "-->" not in line
+            out.append("")
+        elif fence is not None:
+            char, length = fence
+            if re.match(r"^ {0,3}%s{%d,}\s*$" % (re.escape(char), length), line):
+                fence = None
+            out.append("")
+        elif COMMENT_OPEN_RX.match(line):
+            in_comment = "-->" not in line.split("<!--", 1)[1]
+            out.append("")
+        else:
             m = FENCE_OPEN_RX.match(line)
             # A backtick fence's info string may not contain a backtick.
             if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
@@ -80,11 +97,6 @@ def strip_fenced_code(text: str) -> str:
                 out.append("")
             else:
                 out.append(line)
-        else:
-            char, length = fence
-            if re.match(r"^ {0,3}%s{%d,}\s*$" % (re.escape(char), length), line):
-                fence = None
-            out.append("")
     return "\n".join(out)
 
 
@@ -96,7 +108,8 @@ def check_readme(sample: Path) -> list[str]:
     text = readme.read_text(encoding="utf-8", errors="replace")
     # Ignore fenced code and HTML comments so a "# comment" in a bash block or a
     # heading inside a note is not mistaken for structure.
-    body = strip_fenced_code(text)
+    body = strip_hidden_blocks(text)
+    # Inline comments inside a paragraph are hidden too.
     body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
     lines = body.splitlines()
 

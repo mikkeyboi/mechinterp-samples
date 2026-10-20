@@ -110,6 +110,23 @@ def test_rendered_image_counts(sample, image):
     assert _check(sample, _readme(image)) == []
 
 
+@pytest.mark.parametrize(
+    "preamble",
+    [
+        "<!--\n```\n-->\n\n",  # a fence opener inside a comment stays hidden
+        "<!-- a note with ~~~ inline -->\n\n",
+        "```html\n<!-- an unclosed comment, shown as code\n```\n\n",  # stays literal
+    ],
+)
+def test_comments_and_fences_do_not_swallow_each_other(sample, preamble):
+    assert _check(sample, preamble + _readme()) == []
+
+
+def test_template_inside_comment_does_not_satisfy_contract(sample):
+    problems = _check(sample, "<!--\n" + _readme() + "-->\n")
+    assert any(p.startswith("title") for p in problems)
+
+
 def test_missing_figure_file_fails(sample):
     (sample / "figures" / "result.png").unlink()
     assert _check(sample, _readme()) == ["figure not found: figures/result.png"]
