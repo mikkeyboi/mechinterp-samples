@@ -122,6 +122,30 @@ def test_comments_and_fences_do_not_swallow_each_other(sample, preamble):
     assert _check(sample, preamble + _readme()) == []
 
 
+def test_comment_delimiters_quoted_in_code_stay_literal(sample):
+    image = f"Opening `<!--`, plot {IMAGE}, closing `-->`."
+    assert _check(sample, _readme(image)) == []
+    wrapped = "Opening `<!--`.\n\n" + _readme() + "\nClosing `-->`.\n"
+    assert _check(sample, wrapped) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Hidden <!-- {IMAGE} --> here.",
+        f"Hidden <!-- a `quoted` {IMAGE} --> here.",
+    ],
+)
+def test_image_inside_inline_comment_is_not_a_figure(sample, image):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(image)
+    )
+
+
+def test_unclosed_inline_comment_hides_nothing_past_its_paragraph(sample):
+    assert _check(sample, "Stray <!-- marker.\n\n" + _readme()) == []
+
+
 def test_template_inside_comment_does_not_satisfy_contract(sample):
     problems = _check(sample, "<!--\n" + _readme() + "-->\n")
     assert any(p.startswith("title") for p in problems)

@@ -53,9 +53,15 @@ FIGURE_RX = re.compile(r"(?:^|[^\\])(?:\\\\)*!\[[^\]]*\]\((figures/[^)\s]+)\)", 
 FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 # An HTML comment block: a line opening with "<!--" after up to three spaces.
 COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
-# CommonMark code spans: a backtick run closed by the next run of the same length,
-# within one paragraph (a span never crosses a blank line).
-CODE_SPAN_RX = re.compile(r"(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)\1(?!`)", re.DOTALL)
+# Inline code spans and inline HTML comments, scanned together so whichever opens
+# first wins: a "<!--" inside a code span is literal, and a backtick inside a
+# comment is hidden. A span is a backtick run closed by the next run of the same
+# length; neither crosses a blank line (the end of a paragraph).
+INLINE_HIDDEN_RX = re.compile(
+    r"(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)\1(?!`)"
+    r"|<!--(?:(?!\n[ \t]*\n).)*?-->",
+    re.DOTALL,
+)
 
 
 def find_samples() -> list[Path]:
@@ -109,8 +115,10 @@ def check_readme(sample: Path) -> list[str]:
     # Ignore fenced code and HTML comments so a "# comment" in a bash block or a
     # heading inside a note is not mistaken for structure.
     body = strip_hidden_blocks(text)
-    # Inline comments inside a paragraph are hidden too.
-    body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+    # Blank inline code and inline comments too, keeping line breaks so the
+    # block structure (titles, sections) is untouched. A figure quoted in code
+    # is then not counted, and a quoted "<!--" cannot hide what follows it.
+    body = INLINE_HIDDEN_RX.sub(lambda m: " " + "\n" * m.group(0).count("\n"), body)
     lines = body.splitlines()
 
     problems: list[str] = []
@@ -130,8 +138,7 @@ def check_readme(sample: Path) -> list[str]:
         if order != sorted(order):
             problems.append("sections out of order; expected " + " -> ".join(REQUIRED_SECTIONS))
 
-    # Only rendered images count: not one quoted in inline code.
-    figures = FIGURE_RX.findall(CODE_SPAN_RX.sub(" ", body))
+    figures = FIGURE_RX.findall(body)
     if not figures:
         problems.append("no figure: embed at least one ![...](figures/...) image")
     for fig in figures:
