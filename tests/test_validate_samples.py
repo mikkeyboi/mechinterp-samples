@@ -151,6 +151,18 @@ def test_template_inside_comment_does_not_satisfy_contract(sample):
     assert any(p.startswith("title") for p in problems)
 
 
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"{IMAGE}![second](figures/missing.png)",
+        f"\\\\{IMAGE}![second](figures/missing.png)",
+        f"\\{IMAGE}![second](figures/missing.png)",  # first escaped, second real
+    ],
+)
+def test_every_adjacent_image_is_checked(sample, image):
+    assert "figure not found: figures/missing.png" in _check(sample, _readme(image))
+
+
 def test_missing_figure_file_fails(sample):
     (sample / "figures" / "result.png").unlink()
     assert _check(sample, _readme()) == ["figure not found: figures/result.png"]

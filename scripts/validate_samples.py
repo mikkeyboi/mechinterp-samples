@@ -45,9 +45,10 @@ REQUIRED_SECTIONS = [
     "Limits",
 ]
 TITLE_RX = re.compile(r"^# (H\d{3}): .+\?\s*$")
-# An image is "![alt](figures/...)" not preceded by an escaping backslash. An even
-# run of backslashes is literal backslashes, so the "!" after it still renders.
-FIGURE_RX = re.compile(r"(?:^|[^\\])(?:\\\\)*!\[[^\]]*\]\((figures/[^)\s]+)\)", re.MULTILINE)
+# An image is "![alt](figures/...)". Whether a backslash escapes it is decided in
+# figure_paths(), so the match itself consumes nothing before the "!" and
+# adjacent images are each found.
+FIGURE_RX = re.compile(r"!\[[^\]]*\]\((figures/[^)\s]+)\)")
 # CommonMark fences: up to three spaces of indent, then three or more backticks or
 # tildes. A fence closes on a line of the same character, at least as long.
 FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -106,6 +107,18 @@ def strip_hidden_blocks(text: str) -> str:
     return "\n".join(out)
 
 
+def figure_paths(body: str) -> list[str]:
+    """Destinations of rendered figures: skip any "!" behind an odd run of
+    backslashes (escaped); an even run is literal backslashes, so it renders."""
+    out = []
+    for m in FIGURE_RX.finditer(body):
+        start = m.start()
+        run = len(body[:start]) - len(body[:start].rstrip("\\"))
+        if run % 2 == 0:
+            out.append(m.group(1))
+    return out
+
+
 def check_readme(sample: Path) -> list[str]:
     """Return template violations for a sample's README (empty list means ok)."""
     readme = sample / "README.md"
@@ -138,7 +151,7 @@ def check_readme(sample: Path) -> list[str]:
         if order != sorted(order):
             problems.append("sections out of order; expected " + " -> ".join(REQUIRED_SECTIONS))
 
-    figures = FIGURE_RX.findall(body)
+    figures = figure_paths(body)
     if not figures:
         problems.append("no figure: embed at least one ![...](figures/...) image")
     for fig in figures:
