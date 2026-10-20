@@ -45,13 +45,47 @@ REQUIRED_SECTIONS = [
     "Limits",
 ]
 TITLE_RX = re.compile(r"^# (H\d{3}): .+\?\s*$")
-FIGURE_RX = re.compile(r"!\[[^\]]*\]\((figures/[^)\s]+)\)")
+# An image is "![alt](figures/...)" not preceded by an escaping backslash. An even
+# run of backslashes is literal backslashes, so the "!" after it still renders.
+FIGURE_RX = re.compile(r"(?:^|[^\\])(?:\\\\)*!\[[^\]]*\]\((figures/[^)\s]+)\)", re.MULTILINE)
+# CommonMark fences: up to three spaces of indent, then three or more backticks or
+# tildes. A fence closes on a line of the same character, at least as long.
+FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# CommonMark code spans: a backtick run closed by the next run of the same length,
+# within one paragraph (a span never crosses a blank line).
+CODE_SPAN_RX = re.compile(r"(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)\1(?!`)", re.DOTALL)
 
 
 def find_samples() -> list[Path]:
     if not SAMPLES.is_dir():
         return []
     return sorted(p for p in SAMPLES.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
+
+
+def strip_fenced_code(text: str) -> str:
+    """Blank every line inside a fenced code block, fences included.
+
+    Tracks the opening fence's character and length so a "~~~" block, or a
+    four-backtick block holding a triple-backtick line, is removed whole. An
+    unclosed fence runs to the end of the document, as it renders.
+    """
+    out: list[str] = []
+    fence: tuple[str, int] | None = None
+    for line in text.splitlines():
+        if fence is None:
+            m = FENCE_OPEN_RX.match(line)
+            # A backtick fence's info string may not contain a backtick.
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = (m.group(1)[0], len(m.group(1)))
+                out.append("")
+            else:
+                out.append(line)
+        else:
+            char, length = fence
+            if re.match(r"^ {0,3}%s{%d,}\s*$" % (re.escape(char), length), line):
+                fence = None
+            out.append("")
+    return "\n".join(out)
 
 
 def check_readme(sample: Path) -> list[str]:
@@ -62,7 +96,7 @@ def check_readme(sample: Path) -> list[str]:
     text = readme.read_text(encoding="utf-8", errors="replace")
     # Ignore fenced code and HTML comments so a "# comment" in a bash block or a
     # heading inside a note is not mistaken for structure.
-    body = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    body = strip_fenced_code(text)
     body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
     lines = body.splitlines()
 
@@ -83,7 +117,8 @@ def check_readme(sample: Path) -> list[str]:
         if order != sorted(order):
             problems.append("sections out of order; expected " + " -> ".join(REQUIRED_SECTIONS))
 
-    figures = FIGURE_RX.findall(body)
+    # Only rendered images count: not one quoted in inline code.
+    figures = FIGURE_RX.findall(CODE_SPAN_RX.sub(" ", body))
     if not figures:
         problems.append("no figure: embed at least one ![...](figures/...) image")
     for fig in figures:
