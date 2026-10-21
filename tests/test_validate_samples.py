@@ -172,6 +172,24 @@ def test_unescaped_openers_still_hide(sample, image):
     )
 
 
+def test_inline_code_does_not_pair_across_a_heading(sample):
+    text = _readme().replace("## TL;DR\n", "Stray ` in prose\n## TL;DR\nAnother ` in prose\n")
+    assert _check(sample, text) == []
+
+
+def test_text_after_a_multiline_code_span_is_not_a_heading(sample):
+    text = _readme().replace("## Limits\n", "Text `x\n`## Limits\n")
+    assert _check(sample, text) == ["missing section(s): '## Limits'"]
+
+
+@pytest.mark.parametrize("title", ['"Layer profile"', "'Layer profile'", "(Layer profile)"])
+def test_titled_image_is_a_figure(sample, title):
+    assert _check(sample, _readme(f"![plot](figures/result.png {title})")) == []
+    assert _check(sample, _readme(f"![plot](figures/missing.png {title})")) == [
+        "figure not found: figures/missing.png"
+    ]
+
+
 def test_template_inside_comment_does_not_satisfy_contract(sample):
     problems = _check(sample, "<!--\n" + _readme() + "-->\n")
     assert any(p.startswith("title") for p in problems)

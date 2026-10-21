@@ -48,7 +48,10 @@ TITLE_RX = re.compile(r"^# (H\d{3}): .+\?\s*$")
 # An image is "![alt](figures/...)". Whether a backslash escapes it is decided in
 # figure_paths(), so the match itself consumes nothing before the "!" and
 # adjacent images are each found.
-FIGURE_RX = re.compile(r"!\[[^\]]*\]\((figures/[^)\s]+)\)")
+FIGURE_RX = re.compile(
+    r"!\[[^\]]*\]\((figures/[^)\s]+)"
+    r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)"""  # optional "title"
+)
 # CommonMark fences: up to three spaces of indent, then three or more backticks or
 # tildes. A fence closes on a line of the same character, at least as long.
 FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -56,7 +59,12 @@ FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
 # Inline code spans and inline HTML comments are found by blank_inline_hidden(),
 # which scans left to right so escapes and whichever span opens first win.
-BLANK_LINE_RX = re.compile(r"\n[ \t]*\n")
+# Lines that start a new block, so an inline span never pairs across them: a blank
+# line, an ATX heading, a thematic break, a list item or a block quote.
+BLOCK_START_RX = re.compile(
+    r"^(?:[ \t]*$| {0,3}(?:#{1,6}(?:[ \t]|$)|(?:[-*_][ \t]*){3,}$|[-+*][ \t]|\d{1,9}[.)][ \t]|>))"
+)
+HEADING_RX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 ASCII_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 
 
@@ -102,44 +110,61 @@ def strip_hidden_blocks(text: str) -> str:
     return "\n".join(out)
 
 
+def inline_blocks(body: str) -> list[str]:
+    """Split text into the runs of lines that inline markup can span.
+
+    A heading is one line on its own; any other block start begins a new run."""
+    blocks: list[list[str]] = []
+    for line in body.split("\n"):
+        if not blocks or BLOCK_START_RX.match(line) or HEADING_RX.match(blocks[-1][-1]):
+            blocks.append([line])
+        else:
+            blocks[-1].append(line)
+    return ["\n".join(b) for b in blocks]
+
+
 def blank_inline_hidden(body: str) -> str:
-    """Blank inline code spans and inline HTML comments, keeping line breaks.
+    """Blank inline code spans and inline HTML comments, keeping their shape.
 
-    Scans left to right like CommonMark: a backslash before ASCII punctuation
-    escapes it (so "\\`" or "\\<!--" opens nothing), a backtick run is closed by
-    the next run of the same length, a comment by the next "-->", and neither
-    crosses a blank line. Text inside an open code span is literal, backslashes
-    included. Unclosed openers stay as text. Escapes are kept in the output so
-    figure_paths() can still see them.
+    Works block by block (see inline_blocks) and scans each left to right like
+    CommonMark: a backslash before ASCII punctuation escapes it (so "\\`" or
+    "\\<!--" opens nothing), a backtick run is closed by the next run of the same
+    length, and a comment by the next "-->". Text inside an open code span is
+    literal, backslashes included. Unclosed openers stay as text. Escapes are kept
+    in the output so figure_paths() can still see them.
     """
+    return "\n".join(_blank_inline_block(b) for b in inline_blocks(body))
+
+
+def _blank(span: str) -> str:
+    """Spaces in place of a hidden span, same shape, so text after it on the same
+    line never moves to the start of a line and reads as a heading."""
+    return re.sub(r"[^\n]", " ", span)
+
+
+def _blank_inline_block(block: str) -> str:
     out: list[str] = []
-    i, n = 0, len(body)
-
-    def paragraph_end(start: int) -> int:
-        m = BLANK_LINE_RX.search(body, start)
-        return m.start() if m else n
-
+    i, n = 0, len(block)
     while i < n:
-        ch = body[i]
-        if ch == "\\" and i + 1 < n and body[i + 1] in ASCII_PUNCT:
-            out.append(body[i : i + 2])
+        ch = block[i]
+        if ch == "\\" and i + 1 < n and block[i + 1] in ASCII_PUNCT:
+            out.append(block[i : i + 2])
             i += 2
         elif ch == "`":
             j = i
-            while j < n and body[j] == "`":
+            while j < n and block[j] == "`":
                 j += 1
-            run = j - i
-            close = re.compile(r"(?<!`)`{%d}(?!`)" % run).search(body, j, paragraph_end(j))
+            close = re.compile(r"(?<!`)`{%d}(?!`)" % (j - i)).search(block, j)
             if close:
-                out.append(" " + "\n" * body.count("\n", i, close.end()))
+                out.append(_blank(block[i : close.end()]))
                 i = close.end()
             else:
-                out.append(body[i:j])
+                out.append(block[i:j])
                 i = j
-        elif body.startswith("<!--", i):
-            end = body.find("-->", i + 4, paragraph_end(i))
+        elif block.startswith("<!--", i):
+            end = block.find("-->", i + 4)
             if end != -1:
-                out.append(" " + "\n" * body.count("\n", i, end + 3))
+                out.append(_blank(block[i : end + 3]))
                 i = end + 3
             else:
                 out.append(ch)
