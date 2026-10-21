@@ -54,15 +54,10 @@ FIGURE_RX = re.compile(r"!\[[^\]]*\]\((figures/[^)\s]+)\)")
 FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 # An HTML comment block: a line opening with "<!--" after up to three spaces.
 COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
-# Inline code spans and inline HTML comments, scanned together so whichever opens
-# first wins: a "<!--" inside a code span is literal, and a backtick inside a
-# comment is hidden. A span is a backtick run closed by the next run of the same
-# length; neither crosses a blank line (the end of a paragraph).
-INLINE_HIDDEN_RX = re.compile(
-    r"(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)\1(?!`)"
-    r"|<!--(?:(?!\n[ \t]*\n).)*?-->",
-    re.DOTALL,
-)
+# Inline code spans and inline HTML comments are found by blank_inline_hidden(),
+# which scans left to right so escapes and whichever span opens first win.
+BLANK_LINE_RX = re.compile(r"\n[ \t]*\n")
+ASCII_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 
 
 def find_samples() -> list[Path]:
@@ -107,6 +102,54 @@ def strip_hidden_blocks(text: str) -> str:
     return "\n".join(out)
 
 
+def blank_inline_hidden(body: str) -> str:
+    """Blank inline code spans and inline HTML comments, keeping line breaks.
+
+    Scans left to right like CommonMark: a backslash before ASCII punctuation
+    escapes it (so "\\`" or "\\<!--" opens nothing), a backtick run is closed by
+    the next run of the same length, a comment by the next "-->", and neither
+    crosses a blank line. Text inside an open code span is literal, backslashes
+    included. Unclosed openers stay as text. Escapes are kept in the output so
+    figure_paths() can still see them.
+    """
+    out: list[str] = []
+    i, n = 0, len(body)
+
+    def paragraph_end(start: int) -> int:
+        m = BLANK_LINE_RX.search(body, start)
+        return m.start() if m else n
+
+    while i < n:
+        ch = body[i]
+        if ch == "\\" and i + 1 < n and body[i + 1] in ASCII_PUNCT:
+            out.append(body[i : i + 2])
+            i += 2
+        elif ch == "`":
+            j = i
+            while j < n and body[j] == "`":
+                j += 1
+            run = j - i
+            close = re.compile(r"(?<!`)`{%d}(?!`)" % run).search(body, j, paragraph_end(j))
+            if close:
+                out.append(" " + "\n" * body.count("\n", i, close.end()))
+                i = close.end()
+            else:
+                out.append(body[i:j])
+                i = j
+        elif body.startswith("<!--", i):
+            end = body.find("-->", i + 4, paragraph_end(i))
+            if end != -1:
+                out.append(" " + "\n" * body.count("\n", i, end + 3))
+                i = end + 3
+            else:
+                out.append(ch)
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def figure_paths(body: str) -> list[str]:
     """Destinations of rendered figures: skip any "!" behind an odd run of
     backslashes (escaped); an even run is literal backslashes, so it renders."""
@@ -131,7 +174,7 @@ def check_readme(sample: Path) -> list[str]:
     # Blank inline code and inline comments too, keeping line breaks so the
     # block structure (titles, sections) is untouched. A figure quoted in code
     # is then not counted, and a quoted "<!--" cannot hide what follows it.
-    body = INLINE_HIDDEN_RX.sub(lambda m: " " + "\n" * m.group(0).count("\n"), body)
+    body = blank_inline_hidden(body)
     lines = body.splitlines()
 
     problems: list[str] = []

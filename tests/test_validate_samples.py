@@ -146,6 +146,32 @@ def test_unclosed_inline_comment_hides_nothing_past_its_paragraph(sample):
     assert _check(sample, "Stray <!-- marker.\n\n" + _readme()) == []
 
 
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Literal \\<!-- {IMAGE} -->",  # escaped comment opener renders the image
+        f"Literal \\` {IMAGE} \\`",  # escaped backticks open no code span
+        f"Literal \\\\` {IMAGE}",  # an escaped backslash, then an unclosed backtick
+        f"Code ``\\`` {IMAGE} ``",  # a backslash in a code span escapes nothing
+    ],
+)
+def test_escaped_openers_hide_nothing(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Hidden \\\\<!-- {IMAGE} -->",  # an escaped backslash, then a real comment
+        f"Code `` \\` {IMAGE} ``",  # a lone backtick in a longer span is literal
+    ],
+)
+def test_unescaped_openers_still_hide(sample, image):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(image)
+    )
+
+
 def test_template_inside_comment_does_not_satisfy_contract(sample):
     problems = _check(sample, "<!--\n" + _readme() + "-->\n")
     assert any(p.startswith("title") for p in problems)
