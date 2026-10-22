@@ -32,7 +32,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -73,7 +73,7 @@ def readme_outline(text: str) -> tuple[list[tuple[int, str]], list[str]]:
             headings.append((int(tok.tag[1]), tokens[i + 1].content.strip()))
         for child in tok.children or []:
             if child.type == "image":
-                images.append(unquote(str(child.attrGet("src") or "")))
+                images.append(unquote(urlsplit(str(child.attrGet("src") or "")).path))
     return headings, images
 
 

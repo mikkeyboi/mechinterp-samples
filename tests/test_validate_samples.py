@@ -289,6 +289,18 @@ def test_figure_path_normalising_inside_figures_dir_passes(sample):
     assert _check(sample, _readme("![plot](figures/sub/../result.png)")) == []
 
 
+@pytest.mark.parametrize("suffix", ["?raw=1", "#preview", "?raw=1#preview"])
+def test_figure_url_query_and_fragment_are_ignored(sample, suffix):
+    assert _check(sample, _readme(f"![plot](figures/result.png{suffix})")) == []
+    problems = _check(sample, _readme(f"![plot](figures/missing.png{suffix})"))
+    assert problems == ["figure not found: figures/missing.png"]
+
+
+def test_percent_encoded_figure_name_still_decodes(sample):
+    (sample / "figures" / "my plot.png").write_bytes(b"")
+    assert _check(sample, _readme("![plot](figures/my%20plot.png?raw=1)")) == []
+
+
 def test_shipped_samples_follow_template():
     for s in validate_samples.find_samples():
         assert check_readme(s) == [], s.name
