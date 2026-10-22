@@ -64,6 +64,8 @@ COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
 BLOCK_START_RX = re.compile(
     r"^(?:[ \t]*$| {0,3}(?:#{1,6}(?:[ \t]|$)|(?:[-*_][ \t]*){3,}$|[-+*][ \t]|\d{1,9}[.)][ \t]|>))"
 )
+LIST_ITEM_RX = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)")
+INDENTED_RX = re.compile(r"^(?: {4}| {0,3}\t)")
 HEADING_RX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 ASCII_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 
@@ -75,38 +77,65 @@ def find_samples() -> list[Path]:
 
 
 def strip_hidden_blocks(text: str) -> str:
-    """Blank every line of a fenced code block or an HTML comment block.
+    """Blank every line of a code block or an HTML comment block.
 
-    One pass handles both, so a fence marker inside a comment stays hidden and a
-    comment marker inside a code block stays literal. A fence closes on the same
-    character, at least as long, so a "~~~" block, or a four-backtick block
-    holding a triple-backtick line, is removed whole. A comment block starts on a
-    line opening with "<!--" and ends on the line holding "-->". Unclosed blocks
-    run to the end of the document, as they render.
+    One pass handles all three kinds, so a fence marker inside a comment stays
+    hidden and a comment marker inside a code block stays literal. A fence closes
+    on the same character, at least as long, so a "~~~" block, or a four-backtick
+    block holding a triple-backtick line, is removed whole. A comment block starts
+    on a line opening with "<!--" and ends on the line holding "-->". Unclosed
+    blocks run to the end of the document, as they render. An indented code block
+    (four spaces or a tab) starts only where a paragraph cannot continue and
+    outside a list, since indented lines there are paragraph or list content.
     """
     out: list[str] = []
     fence: tuple[str, int] | None = None
     in_comment = False
+    in_indented = False
+    in_list = False
+    # Whether the previous line ended any paragraph, so an indented line may open code.
+    after_break = True
     for line in text.splitlines():
+        blank = not line.strip()
+        indented = INDENTED_RX.match(line) is not None
         if in_comment:
             in_comment = "-->" not in line
             out.append("")
-        elif fence is not None:
+            after_break = True
+            continue
+        if fence is not None:
             char, length = fence
             if re.match(r"^ {0,3}%s{%d,}\s*$" % (re.escape(char), length), line):
                 fence = None
             out.append("")
-        elif COMMENT_OPEN_RX.match(line):
+            after_break = True
+            continue
+        if in_indented and (blank or indented):
+            out.append("")
+            continue
+        in_indented = False
+        if indented and after_break and not in_list and not blank:
+            in_indented = True
+            out.append("")
+            continue
+        if COMMENT_OPEN_RX.match(line):
             in_comment = "-->" not in line.split("<!--", 1)[1]
             out.append("")
-        else:
-            m = FENCE_OPEN_RX.match(line)
-            # A backtick fence's info string may not contain a backtick.
-            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
-                fence = (m.group(1)[0], len(m.group(1)))
-                out.append("")
-            else:
-                out.append(line)
+            after_break = True
+            continue
+        m = FENCE_OPEN_RX.match(line)
+        # A backtick fence's info string may not contain a backtick.
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            fence = (m.group(1)[0], len(m.group(1)))
+            out.append("")
+            after_break = True
+            continue
+        if LIST_ITEM_RX.match(line):
+            in_list = True
+        elif not blank and not line[:1].isspace() and after_break:
+            in_list = False  # an unindented block after a break ends the list
+        out.append(line)
+        after_break = blank or HEADING_RX.match(line) is not None
     return "\n".join(out)
 
 

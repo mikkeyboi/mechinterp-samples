@@ -190,6 +190,24 @@ def test_titled_image_is_a_figure(sample, title):
     ]
 
 
+@pytest.mark.parametrize("indent", ["    ", "\t"])
+def test_indented_code_image_is_not_a_figure(sample, indent):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(f"Intro.\n\n{indent}{IMAGE}")
+    )
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"- item\n\n    {IMAGE}",  # list item continuation
+        f"Text\n    {IMAGE}",  # paragraph continuation
+    ],
+)
+def test_indented_list_or_paragraph_image_counts(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
 def test_template_inside_comment_does_not_satisfy_contract(sample):
     problems = _check(sample, "<!--\n" + _readme() + "-->\n")
     assert any(p.startswith("title") for p in problems)
