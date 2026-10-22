@@ -208,6 +208,50 @@ def test_indented_list_or_paragraph_image_counts(sample, image):
     assert _check(sample, _readme(image)) == []
 
 
+QUOTED_FENCES = [
+    "> ```markdown\n> {img}\n> ```",
+    "> ~~~\n> {img}\n> ~~~",
+    "- item\n\n    ```\n\n    {img}\n    ```",
+    "- item\n\n    ~~~\n\n    {img}\n    ~~~",
+]
+
+
+@pytest.mark.parametrize("layout", QUOTED_FENCES)
+def test_fence_inside_a_container_hides_its_image(sample, layout):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(layout.format(img=IMAGE))
+    )
+
+
+@pytest.mark.parametrize("layout", QUOTED_FENCES)
+def test_missing_file_inside_a_container_fence_is_ignored(sample, layout):
+    fenced = layout.format(img="![gone](figures/missing.png)")
+    assert _check(sample, _readme(f"{IMAGE}\n\n{fenced}")) == []
+
+
+@pytest.mark.parametrize("image", [f"> {IMAGE}", f"- {IMAGE}"])
+def test_quoted_or_listed_image_counts(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+def test_quoted_heading_is_not_a_section(sample):
+    text = _readme().replace("## Limits\n", "> ## Limits\n")
+    assert _check(sample, text) == ["missing section(s): '## Limits'"]
+
+
+def test_title_after_all_sections_fails(sample):
+    title, rest = _readme().split("\n", 1)
+    assert _check(sample, rest + "\n" + title + "\n") == [
+        "title must come before the required sections"
+    ]
+
+
+def test_title_after_first_section_fails(sample):
+    text = _readme().replace("# H001: Is this a valid sample?\n", "")
+    text = text.replace("## Run it\n", "# H001: Is this a valid sample?\n\n## Run it\n")
+    assert _check(sample, text) == ["title must come before the required sections"]
+
+
 def test_template_inside_comment_does_not_satisfy_contract(sample):
     problems = _check(sample, "<!--\n" + _readme() + "-->\n")
     assert any(p.startswith("title") for p in problems)

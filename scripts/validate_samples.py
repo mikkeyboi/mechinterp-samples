@@ -8,8 +8,10 @@ must satisfy. A new sample added tomorrow is validated automatically.
 Invariants enforced (per sample directory under samples/):
   1. It has a README.md (a stranger needs to know what it is and how to run it),
      and that README follows samples/README_TEMPLATE.md: a "# HNNN: <question>?"
-     title matching the directory id, the required "## " sections in order, and
-     at least one figure under figures/ that exists on disk.
+     title matching the directory id, then the required "## " sections in order,
+     and at least one rendered figure under figures/ that exists on disk. The
+     README is parsed as CommonMark (markdown-it-py), so code, comments and
+     quoted examples never count as structure or figures.
   2. It exposes at least one runnable demo: a *.py with an `if __name__ == "__main__"`.
   3. Every demo runs **standalone from a fresh clone**: no install, no PYTHONPATH.
      We invoke it in a subprocess with an empty PYTHONPATH and a synthetic/offline
@@ -30,6 +32,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote
+
+from markdown_it import MarkdownIt
 
 REPO = Path(__file__).resolve().parents[1]
 SAMPLES = REPO / "samples"
@@ -44,30 +49,7 @@ REQUIRED_SECTIONS = [
     "Takeaway",
     "Limits",
 ]
-TITLE_RX = re.compile(r"^# (H\d{3}): .+\?\s*$")
-# An image is "![alt](figures/...)". Whether a backslash escapes it is decided in
-# figure_paths(), so the match itself consumes nothing before the "!" and
-# adjacent images are each found.
-FIGURE_RX = re.compile(
-    r"!\[[^\]]*\]\((figures/[^)\s]+)"
-    r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)"""  # optional "title"
-)
-# CommonMark fences: up to three spaces of indent, then three or more backticks or
-# tildes. A fence closes on a line of the same character, at least as long.
-FENCE_OPEN_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
-# An HTML comment block: a line opening with "<!--" after up to three spaces.
-COMMENT_OPEN_RX = re.compile(r"^ {0,3}<!--")
-# Inline code spans and inline HTML comments are found by blank_inline_hidden(),
-# which scans left to right so escapes and whichever span opens first win.
-# Lines that start a new block, so an inline span never pairs across them: a blank
-# line, an ATX heading, a thematic break, a list item or a block quote.
-BLOCK_START_RX = re.compile(
-    r"^(?:[ \t]*$| {0,3}(?:#{1,6}(?:[ \t]|$)|(?:[-*_][ \t]*){3,}$|[-+*][ \t]|\d{1,9}[.)][ \t]|>))"
-)
-LIST_ITEM_RX = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)")
-INDENTED_RX = re.compile(r"^(?: {4}| {0,3}\t)")
-HEADING_RX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
-ASCII_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+TITLE_RX = re.compile(r"^(H\d{3}): .+\?$")
 
 
 def find_samples() -> list[Path]:
@@ -76,144 +58,23 @@ def find_samples() -> list[Path]:
     return sorted(p for p in SAMPLES.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
 
 
-def strip_hidden_blocks(text: str) -> str:
-    """Blank every line of a code block or an HTML comment block.
+def readme_outline(text: str) -> tuple[list[tuple[int, str]], list[str]]:
+    """Parse a README as CommonMark and return what it renders.
 
-    One pass handles all three kinds, so a fence marker inside a comment stays
-    hidden and a comment marker inside a code block stays literal. A fence closes
-    on the same character, at least as long, so a "~~~" block, or a four-backtick
-    block holding a triple-backtick line, is removed whole. A comment block starts
-    on a line opening with "<!--" and ends on the line holding "-->". Unclosed
-    blocks run to the end of the document, as they render. An indented code block
-    (four spaces or a tab) starts only where a paragraph cannot continue and
-    outside a list, since indented lines there are paragraph or list content.
+    Returns its top-level (not quoted or listed) h1/h2 headings as (level, text)
+    in order, and the destination of every rendered image. Anything inside code,
+    HTML or a comment is never a heading or an image.
     """
-    out: list[str] = []
-    fence: tuple[str, int] | None = None
-    in_comment = False
-    in_indented = False
-    in_list = False
-    # Whether the previous line ended any paragraph, so an indented line may open code.
-    after_break = True
-    for line in text.splitlines():
-        blank = not line.strip()
-        indented = INDENTED_RX.match(line) is not None
-        if in_comment:
-            in_comment = "-->" not in line
-            out.append("")
-            after_break = True
-            continue
-        if fence is not None:
-            char, length = fence
-            if re.match(r"^ {0,3}%s{%d,}\s*$" % (re.escape(char), length), line):
-                fence = None
-            out.append("")
-            after_break = True
-            continue
-        if in_indented and (blank or indented):
-            out.append("")
-            continue
-        in_indented = False
-        if indented and after_break and not in_list and not blank:
-            in_indented = True
-            out.append("")
-            continue
-        if COMMENT_OPEN_RX.match(line):
-            in_comment = "-->" not in line.split("<!--", 1)[1]
-            out.append("")
-            after_break = True
-            continue
-        m = FENCE_OPEN_RX.match(line)
-        # A backtick fence's info string may not contain a backtick.
-        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
-            fence = (m.group(1)[0], len(m.group(1)))
-            out.append("")
-            after_break = True
-            continue
-        if LIST_ITEM_RX.match(line):
-            in_list = True
-        elif not blank and not line[:1].isspace() and after_break:
-            in_list = False  # an unindented block after a break ends the list
-        out.append(line)
-        after_break = blank or HEADING_RX.match(line) is not None
-    return "\n".join(out)
-
-
-def inline_blocks(body: str) -> list[str]:
-    """Split text into the runs of lines that inline markup can span.
-
-    A heading is one line on its own; any other block start begins a new run."""
-    blocks: list[list[str]] = []
-    for line in body.split("\n"):
-        if not blocks or BLOCK_START_RX.match(line) or HEADING_RX.match(blocks[-1][-1]):
-            blocks.append([line])
-        else:
-            blocks[-1].append(line)
-    return ["\n".join(b) for b in blocks]
-
-
-def blank_inline_hidden(body: str) -> str:
-    """Blank inline code spans and inline HTML comments, keeping their shape.
-
-    Works block by block (see inline_blocks) and scans each left to right like
-    CommonMark: a backslash before ASCII punctuation escapes it (so "\\`" or
-    "\\<!--" opens nothing), a backtick run is closed by the next run of the same
-    length, and a comment by the next "-->". Text inside an open code span is
-    literal, backslashes included. Unclosed openers stay as text. Escapes are kept
-    in the output so figure_paths() can still see them.
-    """
-    return "\n".join(_blank_inline_block(b) for b in inline_blocks(body))
-
-
-def _blank(span: str) -> str:
-    """Spaces in place of a hidden span, same shape, so text after it on the same
-    line never moves to the start of a line and reads as a heading."""
-    return re.sub(r"[^\n]", " ", span)
-
-
-def _blank_inline_block(block: str) -> str:
-    out: list[str] = []
-    i, n = 0, len(block)
-    while i < n:
-        ch = block[i]
-        if ch == "\\" and i + 1 < n and block[i + 1] in ASCII_PUNCT:
-            out.append(block[i : i + 2])
-            i += 2
-        elif ch == "`":
-            j = i
-            while j < n and block[j] == "`":
-                j += 1
-            close = re.compile(r"(?<!`)`{%d}(?!`)" % (j - i)).search(block, j)
-            if close:
-                out.append(_blank(block[i : close.end()]))
-                i = close.end()
-            else:
-                out.append(block[i:j])
-                i = j
-        elif block.startswith("<!--", i):
-            end = block.find("-->", i + 4)
-            if end != -1:
-                out.append(_blank(block[i : end + 3]))
-                i = end + 3
-            else:
-                out.append(ch)
-                i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
-def figure_paths(body: str) -> list[str]:
-    """Destinations of rendered figures: skip any "!" behind an odd run of
-    backslashes (escaped); an even run is literal backslashes, so it renders."""
-    out = []
-    for m in FIGURE_RX.finditer(body):
-        start = m.start()
-        run = len(body[:start]) - len(body[:start].rstrip("\\"))
-        if run % 2 == 0:
-            out.append(m.group(1))
-    return out
+    tokens = MarkdownIt("commonmark").parse(text)
+    headings: list[tuple[int, str]] = []
+    images: list[str] = []
+    for i, tok in enumerate(tokens):
+        if tok.type == "heading_open" and tok.level == 0 and tok.tag in ("h1", "h2"):
+            headings.append((int(tok.tag[1]), tokens[i + 1].content.strip()))
+        for child in tok.children or []:
+            if child.type == "image":
+                images.append(unquote(str(child.attrGet("src") or "")))
+    return headings, images
 
 
 def check_readme(sample: Path) -> list[str]:
@@ -221,34 +82,31 @@ def check_readme(sample: Path) -> list[str]:
     readme = sample / "README.md"
     if not readme.is_file():
         return ["missing README.md"]
-    text = readme.read_text(encoding="utf-8", errors="replace")
-    # Ignore fenced code and HTML comments so a "# comment" in a bash block or a
-    # heading inside a note is not mistaken for structure.
-    body = strip_hidden_blocks(text)
-    # Blank inline code and inline comments too, keeping line breaks so the
-    # block structure (titles, sections) is untouched. A figure quoted in code
-    # is then not counted, and a quoted "<!--" cannot hide what follows it.
-    body = blank_inline_hidden(body)
-    lines = body.splitlines()
+    headings, images = readme_outline(readme.read_text(encoding="utf-8", errors="replace"))
 
     problems: list[str] = []
-    title = next((ln for ln in lines if ln.startswith("# ")), None)
+    title_at = next((i for i, (level, _) in enumerate(headings) if level == 1), None)
+    title = headings[title_at][1] if title_at is not None else None
     m = TITLE_RX.match(title or "")
     if not m:
-        problems.append(f"title must read '# HNNN: <question>?', got {title!r}")
+        shown = f"# {title}" if title is not None else None
+        problems.append(f"title must read '# HNNN: <question>?', got {shown!r}")
     elif not sample.name.lower().startswith(m.group(1).lower() + "_"):
         problems.append(f"title id {m.group(1)} does not match directory {sample.name}")
 
-    sections = [ln[3:].strip() for ln in lines if ln.startswith("## ")]
-    missing = [s for s in REQUIRED_SECTIONS if s not in sections]
+    sections = [(i, text) for i, (level, text) in enumerate(headings) if level == 2]
+    names = [text for _, text in sections]
+    missing = [s for s in REQUIRED_SECTIONS if s not in names]
     if missing:
         problems.append("missing section(s): " + ", ".join(f"'## {s}'" for s in missing))
     else:
-        order = [sections.index(s) for s in REQUIRED_SECTIONS]
-        if order != sorted(order):
+        at = [sections[names.index(s)][0] for s in REQUIRED_SECTIONS]
+        if at != sorted(at):
             problems.append("sections out of order; expected " + " -> ".join(REQUIRED_SECTIONS))
+        if title_at is not None and title_at > at[0]:
+            problems.append("title must come before the required sections")
 
-    figures = figure_paths(body)
+    figures = [src for src in images if src.startswith("figures/")]
     if not figures:
         problems.append("no figure: embed at least one ![...](figures/...) image")
     for fig in figures:
