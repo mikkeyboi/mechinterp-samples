@@ -106,7 +106,15 @@ def check_readme(sample: Path) -> list[str]:
         if title_at is not None and title_at > at[0]:
             problems.append("title must come before the required sections")
 
-    figures = [src for src in images if src.startswith("figures/")]
+    fig_dir = (sample / "figures").resolve()
+    figures = []
+    for src in images:
+        if not src.startswith("figures/"):
+            continue
+        if (sample / src).resolve().is_relative_to(fig_dir):
+            figures.append(src)
+        else:
+            problems.append(f"figure outside figures/: {src}")
     if not figures:
         problems.append("no figure: embed at least one ![...](figures/...) image")
     for fig in figures:

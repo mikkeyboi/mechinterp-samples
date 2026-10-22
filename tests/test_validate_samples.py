@@ -274,6 +274,21 @@ def test_missing_figure_file_fails(sample):
     assert _check(sample, _readme()) == ["figure not found: figures/result.png"]
 
 
+@pytest.mark.parametrize("src", ["figures/../README.md", "figures/../../h001_example/README.md"])
+def test_figure_path_escaping_figures_dir_fails(sample, src):
+    problems = _check(sample, _readme(f"![plot]({src})"))
+    assert problems == [
+        f"figure outside figures/: {src}",
+        "no figure: embed at least one ![...](figures/...) image",
+    ]
+    assert f"figure outside figures/: {src}" in _check(sample, _readme(f"{IMAGE}![plot]({src})"))
+
+
+def test_figure_path_normalising_inside_figures_dir_passes(sample):
+    (sample / "figures" / "sub").mkdir()
+    assert _check(sample, _readme("![plot](figures/sub/../result.png)")) == []
+
+
 def test_shipped_samples_follow_template():
     for s in validate_samples.find_samples():
         assert check_readme(s) == [], s.name
