@@ -301,6 +301,19 @@ def test_percent_encoded_figure_name_still_decodes(sample):
     assert _check(sample, _readme("![plot](figures/my%20plot.png?raw=1)")) == []
 
 
+@pytest.mark.parametrize(
+    "src",
+    ["mailto:figures/result.png", "ftp:figures/result.png", "custom:figures/result.png",
+     "https:figures/result.png", "//example.com/figures/result.png"],
+)
+def test_nonlocal_image_url_is_not_a_figure(sample, src):
+    assert _check(sample, _readme(f"![plot]({src})")) == [
+        "no figure: embed at least one ![...](figures/...) image"
+    ]
+    missing = src.replace("result.png", "missing.png")
+    assert _check(sample, _readme(f"{IMAGE}![remote]({missing})")) == []
+
+
 def test_shipped_samples_follow_template():
     for s in validate_samples.find_samples():
         assert check_readme(s) == [], s.name

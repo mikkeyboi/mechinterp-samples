@@ -62,7 +62,8 @@ def readme_outline(text: str) -> tuple[list[tuple[int, str]], list[str]]:
     """Parse a README as CommonMark and return what it renders.
 
     Returns its top-level (not quoted or listed) h1/h2 headings as (level, text)
-    in order, and the destination of every rendered image. Anything inside code,
+    in order, and the decoded local path of every rendered image with a relative
+    destination (URLs with a scheme or host are skipped). Anything inside code,
     HTML or a comment is never a heading or an image.
     """
     tokens = MarkdownIt("commonmark").parse(text)
@@ -73,7 +74,9 @@ def readme_outline(text: str) -> tuple[list[tuple[int, str]], list[str]]:
             headings.append((int(tok.tag[1]), tokens[i + 1].content.strip()))
         for child in tok.children or []:
             if child.type == "image":
-                images.append(unquote(urlsplit(str(child.attrGet("src") or "")).path))
+                url = urlsplit(str(child.attrGet("src") or ""))
+                if not url.scheme and not url.netloc:  # local relative file only
+                    images.append(unquote(url.path))
     return headings, images
 
 
