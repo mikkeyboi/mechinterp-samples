@@ -314,6 +314,33 @@ def test_nonlocal_image_url_is_not_a_figure(sample, src):
     assert _check(sample, _readme(f"{IMAGE}![remote]({missing})")) == []
 
 
+@pytest.mark.parametrize(
+    "src", ["./figures/result.png", "././figures/result.png", "./figures/result.png?raw=1#preview"]
+)
+def test_dot_relative_figure_path_is_a_figure(sample, src):
+    assert _check(sample, _readme(f"![plot]({src})")) == []
+    missing = src.replace("result.png", "missing.png").split("?")[0]
+    assert _check(sample, _readme(f"![plot]({missing})")) == [f"figure not found: {missing}"]
+
+
+def test_dot_relative_encoded_figure_name_decodes(sample):
+    (sample / "figures" / "my plot.png").write_bytes(b"")
+    assert _check(sample, _readme("![plot](./figures/my%20plot.png)")) == []
+
+
+@pytest.mark.parametrize(
+    "src", ["./figures/../README.md", "././figures/../../h001_example/README.md"]
+)
+def test_dot_relative_path_escaping_figures_dir_fails(sample, src):
+    assert f"figure outside figures/: {src}" in _check(sample, _readme(f"{IMAGE}![plot]({src})"))
+
+
+def test_symlink_escaping_figures_dir_fails(sample):
+    (sample / "figures" / "link.md").symlink_to(sample / "README.md")
+    problems = _check(sample, _readme(f"{IMAGE}![plot](./figures/link.md)"))
+    assert "figure outside figures/: ./figures/link.md" in problems
+
+
 def test_shipped_samples_follow_template():
     for s in validate_samples.find_samples():
         assert check_readme(s) == [], s.name

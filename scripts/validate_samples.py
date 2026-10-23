@@ -112,7 +112,7 @@ def check_readme(sample: Path) -> list[str]:
     fig_dir = (sample / "figures").resolve()
     figures = []
     for src in images:
-        if not src.startswith("figures/"):
+        if not re.sub(r"^(?:\./)+", "", src).startswith("figures/"):
             continue
         if (sample / src).resolve().is_relative_to(fig_dir):
             figures.append(src)
