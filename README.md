@@ -32,25 +32,37 @@ model-capture runs are opt-in (`--real`) and need the `capture` extra.
 | [`h004_readable_vs_steerable`](samples/h004_readable_vs_steerable/) | Does linear readability imply alignment with the model's output basis? | runnable; synthetic offline default plus an optional real-model logit-lens profile |
 | [`h005_refusal_direction`](samples/h005_refusal_direction/) | Is refusal mediated by a single residual-stream direction? | runnable; synthetic planted-refusal default with a norm-matched random control |
 
-More samples land as the project progresses; the table grows with them.
+More samples land as the project progresses; the table grows with them. Every
+sample README follows one shape (question, TL;DR, run it, figure, takeaway,
+limits), defined in [`samples/README_TEMPLATE.md`](samples/README_TEMPLATE.md)
+and checked in CI, so the honest result and its boundaries are always in the
+same place.
 
 ## Design
 
-The two axes you are most likely to extend are **polymorphic** by design:
+The axes you are most likely to extend are **polymorphic** by design:
 
 - **Concept** -> subclass `ConceptDataset` (`datasets.py`). Implement `build()`,
   return a `DatasetSplit`. `SentimentDataset` is the worked example.
 - **Probe family** -> subclass `Probe` (`probes.py`). Implement `fit`/`predict`.
   `LinearProbe` (logistic regression) ships; an MLP probe is a drop-in.
+- **Intervention** -> subclass `Intervention` (`refusal.py`). Implement `apply`.
+  `DirectionalAblation` and `ActivationAddition` ship; h005 uses both.
 
 The rest is composition:
 
 ```
 src/mechinterp_samples/
-  datasets.py   ConceptDataset (ABC), SentimentDataset, DatasetSplit
-  capture.py    ActivationCapturer + Pooler hierarchy (MeanPooler, LastTokenPooler)
-  probes.py     Probe (ABC), LinearProbe, LayerProbeSweep, LayerResult, SweepReport
-  plotting.py   LayerCurvePlotter
+  datasets.py       ConceptDataset (ABC), SentimentDataset, NegationSentimentDataset,
+                    DatasetSplit
+  capture.py        ActivationCapturer + Pooler hierarchy (MeanPooler, LastTokenPooler)
+  probes.py         Probe (ABC), LinearProbe, LayerProbeSweep, LayerResult, SweepReport
+  accessibility.py  OutputAccessibilityAnalyzer, AccessibilityReport, rank_auc (h004)
+  refusal.py        RefusalDirection, Intervention (ABC) with DirectionalAblation and
+                    ActivationAddition, RefusalClassifier, PlantedRefusalModel,
+                    SingleDirectionExperiment (h005)
+  plotting.py       LayerCurvePlotter, DepthProfileContrastPlotter,
+                    AccessibilityPlotter, RefusalReproductionPlotter
 ```
 
 Two disciplines are baked in because they separate a real interpretability claim

@@ -52,7 +52,10 @@ needs in `src/mechinterp_samples/`. Items marked **(CI)** are enforced by CI.
 **Layout**
 
 - [ ] Directory named `hNNN_<slug>`, mirroring the private project's hypothesis id.
-- [ ] `README.md` with the question, how to run it, and the honest takeaway. **(CI)**
+- [ ] `README.md` written from `samples/README_TEMPLATE.md`: a `# HNNN: <question>?`
+      title, then `## TL;DR`, `## Run it`, `## How to read the figure`,
+      `## Takeaway` and `## Limits` in that order, embedding a figure from
+      `figures/`. Extra sections are fine. **(CI)**
 - [ ] `demo.py` with an `if __name__ == "__main__":` entry point. **(CI)**
 - [ ] `figures/` holding the figure and JSON report the demo writes.
 - [ ] Optional: `notebook.ipynb` as a narrated walkthrough (see below).

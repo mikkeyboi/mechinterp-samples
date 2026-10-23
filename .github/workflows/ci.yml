@@ -71,7 +71,7 @@ jobs:
       # clone (the blindspot that bit us: importable under pytest but not when run
       # directly). Runtime deps come from the project's core dependency set.
       - name: Install runtime deps only (no editable install)
-        run: pip install "numpy>=1.24" "scikit-learn>=1.3" "matplotlib>=3.7"
+        run: pip install "numpy>=1.24" "scikit-learn>=1.3" "matplotlib>=3.7" "markdown-it-py>=3.0"
       - name: Validate + run every sample
         env:
           SAMPLE_RUN_TIMEOUT: "420"

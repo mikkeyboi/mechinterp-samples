@@ -1,0 +1,346 @@
+"""Tests for the README template check in scripts/validate_samples.py."""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "validate_samples.py"
+_spec = importlib.util.spec_from_file_location("validate_samples", _SCRIPT)
+validate_samples = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(validate_samples)
+check_readme = validate_samples.check_readme
+
+IMAGE = "![plot](figures/result.png)"
+
+
+def _readme(image: str = IMAGE) -> str:
+    return f"""# H001: Is this a valid sample?
+
+Intro.
+
+## TL;DR
+
+- point
+
+## Run it
+
+```bash
+python demo.py
+```
+
+## How to read the figure
+
+{image}
+
+## Takeaway
+
+Result.
+
+## Limits
+
+- limit
+"""
+
+
+@pytest.fixture
+def sample(tmp_path):
+    root = tmp_path / "h001_example"
+    (root / "figures").mkdir(parents=True)
+    (root / "figures" / "result.png").write_bytes(b"png")
+    return root
+
+
+def _check(sample: Path, text: str) -> list[str]:
+    (sample / "README.md").write_text(text, encoding="utf-8")
+    return check_readme(sample)
+
+
+def test_valid_readme_passes(sample):
+    assert _check(sample, _readme()) == []
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    [
+        "~~~markdown\n{body}~~~\n",
+        "````markdown\n{body}````\n",
+        "~~~~\n{body}",  # unclosed fence runs to the end of the document
+    ],
+)
+def test_fenced_readme_does_not_satisfy_template(sample, wrapped):
+    problems = _check(sample, wrapped.format(body=_readme()))
+    assert any(p.startswith("title") for p in problems)
+    assert any(p.startswith("missing section") for p in problems)
+    assert any(p.startswith("no figure") for p in problems)
+
+
+@pytest.mark.parametrize("fence", ["~~~", "```", "````"])
+def test_fenced_shell_comment_before_title_is_ignored(sample, fence):
+    preamble = f"{fence}bash\n# install the dependencies\n{fence}\n\n"
+    assert _check(sample, preamble + _readme()) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"`{IMAGE}`",
+        f"``{IMAGE}``",
+        "\\" + IMAGE,
+        "\\\\\\" + IMAGE,
+    ],
+)
+def test_unrendered_image_is_not_a_figure(sample, image):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(image)
+    )
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"`{IMAGE}` renders as {IMAGE}",
+        "\\\\" + IMAGE,  # an escaped backslash, then a real image
+        f"Inline: {IMAGE}",
+        f"A stray ` backtick.\n\n{IMAGE}\n\nAnother ` later.",  # spans stop at blank lines
+    ],
+)
+def test_rendered_image_counts(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+@pytest.mark.parametrize(
+    "preamble",
+    [
+        "<!--\n```\n-->\n\n",  # a fence opener inside a comment stays hidden
+        "<!-- a note with ~~~ inline -->\n\n",
+        "```html\n<!-- an unclosed comment, shown as code\n```\n\n",  # stays literal
+    ],
+)
+def test_comments_and_fences_do_not_swallow_each_other(sample, preamble):
+    assert _check(sample, preamble + _readme()) == []
+
+
+def test_comment_delimiters_quoted_in_code_stay_literal(sample):
+    image = f"Opening `<!--`, plot {IMAGE}, closing `-->`."
+    assert _check(sample, _readme(image)) == []
+    wrapped = "Opening `<!--`.\n\n" + _readme() + "\nClosing `-->`.\n"
+    assert _check(sample, wrapped) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Hidden <!-- {IMAGE} --> here.",
+        f"Hidden <!-- a `quoted` {IMAGE} --> here.",
+    ],
+)
+def test_image_inside_inline_comment_is_not_a_figure(sample, image):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(image)
+    )
+
+
+def test_unclosed_inline_comment_hides_nothing_past_its_paragraph(sample):
+    assert _check(sample, "Stray <!-- marker.\n\n" + _readme()) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Literal \\<!-- {IMAGE} -->",  # escaped comment opener renders the image
+        f"Literal \\` {IMAGE} \\`",  # escaped backticks open no code span
+        f"Literal \\\\` {IMAGE}",  # an escaped backslash, then an unclosed backtick
+        f"Code ``\\`` {IMAGE} ``",  # a backslash in a code span escapes nothing
+    ],
+)
+def test_escaped_openers_hide_nothing(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"Hidden \\\\<!-- {IMAGE} -->",  # an escaped backslash, then a real comment
+        f"Code `` \\` {IMAGE} ``",  # a lone backtick in a longer span is literal
+    ],
+)
+def test_unescaped_openers_still_hide(sample, image):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(image)
+    )
+
+
+def test_inline_code_does_not_pair_across_a_heading(sample):
+    text = _readme().replace("## TL;DR\n", "Stray ` in prose\n## TL;DR\nAnother ` in prose\n")
+    assert _check(sample, text) == []
+
+
+def test_text_after_a_multiline_code_span_is_not_a_heading(sample):
+    text = _readme().replace("## Limits\n", "Text `x\n`## Limits\n")
+    assert _check(sample, text) == ["missing section(s): '## Limits'"]
+
+
+@pytest.mark.parametrize("title", ['"Layer profile"', "'Layer profile'", "(Layer profile)"])
+def test_titled_image_is_a_figure(sample, title):
+    assert _check(sample, _readme(f"![plot](figures/result.png {title})")) == []
+    assert _check(sample, _readme(f"![plot](figures/missing.png {title})")) == [
+        "figure not found: figures/missing.png"
+    ]
+
+
+@pytest.mark.parametrize("indent", ["    ", "\t"])
+def test_indented_code_image_is_not_a_figure(sample, indent):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(f"Intro.\n\n{indent}{IMAGE}")
+    )
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"- item\n\n    {IMAGE}",  # list item continuation
+        f"Text\n    {IMAGE}",  # paragraph continuation
+    ],
+)
+def test_indented_list_or_paragraph_image_counts(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+QUOTED_FENCES = [
+    "> ```markdown\n> {img}\n> ```",
+    "> ~~~\n> {img}\n> ~~~",
+    "- item\n\n    ```\n\n    {img}\n    ```",
+    "- item\n\n    ~~~\n\n    {img}\n    ~~~",
+]
+
+
+@pytest.mark.parametrize("layout", QUOTED_FENCES)
+def test_fence_inside_a_container_hides_its_image(sample, layout):
+    assert "no figure: embed at least one ![...](figures/...) image" in _check(
+        sample, _readme(layout.format(img=IMAGE))
+    )
+
+
+@pytest.mark.parametrize("layout", QUOTED_FENCES)
+def test_missing_file_inside_a_container_fence_is_ignored(sample, layout):
+    fenced = layout.format(img="![gone](figures/missing.png)")
+    assert _check(sample, _readme(f"{IMAGE}\n\n{fenced}")) == []
+
+
+@pytest.mark.parametrize("image", [f"> {IMAGE}", f"- {IMAGE}"])
+def test_quoted_or_listed_image_counts(sample, image):
+    assert _check(sample, _readme(image)) == []
+
+
+def test_quoted_heading_is_not_a_section(sample):
+    text = _readme().replace("## Limits\n", "> ## Limits\n")
+    assert _check(sample, text) == ["missing section(s): '## Limits'"]
+
+
+def test_title_after_all_sections_fails(sample):
+    title, rest = _readme().split("\n", 1)
+    assert _check(sample, rest + "\n" + title + "\n") == [
+        "title must come before the required sections"
+    ]
+
+
+def test_title_after_first_section_fails(sample):
+    text = _readme().replace("# H001: Is this a valid sample?\n", "")
+    text = text.replace("## Run it\n", "# H001: Is this a valid sample?\n\n## Run it\n")
+    assert _check(sample, text) == ["title must come before the required sections"]
+
+
+def test_template_inside_comment_does_not_satisfy_contract(sample):
+    problems = _check(sample, "<!--\n" + _readme() + "-->\n")
+    assert any(p.startswith("title") for p in problems)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"{IMAGE}![second](figures/missing.png)",
+        f"\\\\{IMAGE}![second](figures/missing.png)",
+        f"\\{IMAGE}![second](figures/missing.png)",  # first escaped, second real
+    ],
+)
+def test_every_adjacent_image_is_checked(sample, image):
+    assert "figure not found: figures/missing.png" in _check(sample, _readme(image))
+
+
+def test_missing_figure_file_fails(sample):
+    (sample / "figures" / "result.png").unlink()
+    assert _check(sample, _readme()) == ["figure not found: figures/result.png"]
+
+
+@pytest.mark.parametrize("src", ["figures/../README.md", "figures/../../h001_example/README.md"])
+def test_figure_path_escaping_figures_dir_fails(sample, src):
+    problems = _check(sample, _readme(f"![plot]({src})"))
+    assert problems == [
+        f"figure outside figures/: {src}",
+        "no figure: embed at least one ![...](figures/...) image",
+    ]
+    assert f"figure outside figures/: {src}" in _check(sample, _readme(f"{IMAGE}![plot]({src})"))
+
+
+def test_figure_path_normalising_inside_figures_dir_passes(sample):
+    (sample / "figures" / "sub").mkdir()
+    assert _check(sample, _readme("![plot](figures/sub/../result.png)")) == []
+
+
+@pytest.mark.parametrize("suffix", ["?raw=1", "#preview", "?raw=1#preview"])
+def test_figure_url_query_and_fragment_are_ignored(sample, suffix):
+    assert _check(sample, _readme(f"![plot](figures/result.png{suffix})")) == []
+    problems = _check(sample, _readme(f"![plot](figures/missing.png{suffix})"))
+    assert problems == ["figure not found: figures/missing.png"]
+
+
+def test_percent_encoded_figure_name_still_decodes(sample):
+    (sample / "figures" / "my plot.png").write_bytes(b"")
+    assert _check(sample, _readme("![plot](figures/my%20plot.png?raw=1)")) == []
+
+
+@pytest.mark.parametrize(
+    "src",
+    ["mailto:figures/result.png", "ftp:figures/result.png", "custom:figures/result.png",
+     "https:figures/result.png", "//example.com/figures/result.png"],
+)
+def test_nonlocal_image_url_is_not_a_figure(sample, src):
+    assert _check(sample, _readme(f"![plot]({src})")) == [
+        "no figure: embed at least one ![...](figures/...) image"
+    ]
+    missing = src.replace("result.png", "missing.png")
+    assert _check(sample, _readme(f"{IMAGE}![remote]({missing})")) == []
+
+
+@pytest.mark.parametrize(
+    "src", ["./figures/result.png", "././figures/result.png", "./figures/result.png?raw=1#preview"]
+)
+def test_dot_relative_figure_path_is_a_figure(sample, src):
+    assert _check(sample, _readme(f"![plot]({src})")) == []
+    missing = src.replace("result.png", "missing.png").split("?")[0]
+    assert _check(sample, _readme(f"![plot]({missing})")) == [f"figure not found: {missing}"]
+
+
+def test_dot_relative_encoded_figure_name_decodes(sample):
+    (sample / "figures" / "my plot.png").write_bytes(b"")
+    assert _check(sample, _readme("![plot](./figures/my%20plot.png)")) == []
+
+
+@pytest.mark.parametrize(
+    "src", ["./figures/../README.md", "././figures/../../h001_example/README.md"]
+)
+def test_dot_relative_path_escaping_figures_dir_fails(sample, src):
+    assert f"figure outside figures/: {src}" in _check(sample, _readme(f"{IMAGE}![plot]({src})"))
+
+
+def test_symlink_escaping_figures_dir_fails(sample):
+    (sample / "figures" / "link.md").symlink_to(sample / "README.md")
+    problems = _check(sample, _readme(f"{IMAGE}![plot](./figures/link.md)"))
+    assert "figure outside figures/: ./figures/link.md" in problems
+
+
+def test_shipped_samples_follow_template():
+    for s in validate_samples.find_samples():
+        assert check_readme(s) == [], s.name
